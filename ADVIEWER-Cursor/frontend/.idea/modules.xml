@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/adviewer.iml" filepath="$PROJECT_DIR$/adviewer.iml" />
+      <module fileurl="file://$PROJECT_DIR$/android/adviewer_android.iml" filepath="$PROJECT_DIR$/android/adviewer_android.iml" />
+    </modules>
+  </component>
+</project>
