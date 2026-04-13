@@ -108,3 +108,15 @@ async def test_route_uses_feedback_to_override(router):
     )
     decision = await router.route("Analyse les logs du serveur")
     assert decision.llm == "gemini/gemini-2.5-pro"
+
+
+@pytest.mark.asyncio
+async def test_save_feedback_rejects_unknown_llm(router):
+    """save_feedback lève ValueError si corrected_to n'est pas un LLM connu."""
+    await router.init_db()
+    with pytest.raises(ValueError, match="LLM inconnu"):
+        await router.save_feedback(
+            prompt="test",
+            routed_to="minimax/minimax-m2.5",
+            corrected_to="fake-llm/that-does-not-exist",
+        )

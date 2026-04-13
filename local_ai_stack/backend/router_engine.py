@@ -190,6 +190,18 @@ class RouterEngine:
         corrected_to: str,
         pattern: str = "",
     ) -> None:
+        """Stocke une correction de routage pour apprentissage futur.
+
+        Raises:
+            ValueError: Si corrected_to n'est pas un LLM connu.
+        """
+        # P2 : valider que corrected_to est un LLM connu
+        valid_llms = set(ROLE_MODELS.values())
+        if corrected_to not in valid_llms:
+            raise ValueError(
+                f"LLM inconnu pour feedback: {corrected_to}. "
+                f"Valeurs valides: {list(valid_llms)}"
+            )
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT INTO routing_feedback

@@ -44,13 +44,13 @@ async def test_task_queue_parallel_different_llms():
         await asyncio.sleep(0.1)
         return "done"
 
-    start = asyncio.get_event_loop().time()
+    start = asyncio.get_running_loop().time()
     results = await asyncio.gather(
         queue.submit("minimax", slow_task()),
         queue.submit("deepseek", slow_task()),
         queue.submit("gemini", slow_task()),
     )
-    duration = asyncio.get_event_loop().time() - start
+    duration = asyncio.get_running_loop().time() - start
     assert results == ["done", "done", "done"]
     # En parallèle, devrait prendre ~0.1s, pas 0.3s
     assert duration < 0.25
@@ -70,7 +70,7 @@ async def test_task_queue_exception_propagates():
 
 @pytest.mark.asyncio
 async def test_task_queue_pending_count_tracks_queue_size():
-    """pending_count reflète le nombre de tâches en attente."""
+    """pending_count reflète le nombre de tâches en attente + en cours."""
     queue = LLMTaskQueue()
     assert queue.pending_count("minimax") == 0
 
@@ -78,9 +78,12 @@ async def test_task_queue_pending_count_tracks_queue_size():
         await asyncio.sleep(0.2)
         return "ok"
 
-    # Lancer sans attendre
     t1 = asyncio.create_task(queue.submit("minimax", long_task()))
     t2 = asyncio.create_task(queue.submit("minimax", long_task()))
-    await asyncio.sleep(0.05)  # Laisser la première démarrer
-    assert queue.pending_count("minimax") >= 0  # Au moins la 2e est en attente
+    await asyncio.sleep(0.05)  # Laisser la 1re démarrer
+    # 1 en cours + 1 en attente = 2
+    assert queue.pending_count("minimax") == 2
     await asyncio.gather(t1, t2)
+    # Après exécution, 0
+    await asyncio.sleep(0.05)  # laisser le worker décrémenter
+    assert queue.pending_count("minimax") == 0

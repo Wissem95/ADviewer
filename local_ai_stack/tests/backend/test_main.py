@@ -28,13 +28,18 @@ async def test_health_endpoint(client):
 
 
 @pytest.mark.asyncio
-async def test_route_endpoint(client):
-    resp = await client.post("/route", json={"prompt": "Corrige un typo"})
+async def test_route_endpoint(app):
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/route", json={"prompt": "Corrige un typo"})
     assert resp.status_code == 200
     data = resp.json()
-    assert "llm" in data
-    assert "score" in data
-    assert "mode" in data
+    # Typo = simple → minimax
+    assert data["llm"] == "minimax/minimax-m2.5"
+    assert data["mode"] == "simple"
+    assert data["role"] == "coding"
+    assert data["score"] <= 4
 
 
 @pytest.mark.asyncio

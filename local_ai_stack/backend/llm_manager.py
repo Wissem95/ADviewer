@@ -91,7 +91,12 @@ class RateLimiter:
         self._timestamps: deque[float] = deque()
 
     def try_acquire(self) -> bool:
-        """Retourne True si sous la limite, False sinon."""
+        """Retourne True si sous la limite, False sinon.
+
+        NOTE : Le slot est consommé dès l'acquire, même si l'appel LLM échoue
+        ensuite. Cela permet d'être pessimiste sur les limites du provider
+        (préfère refuser un appel légitime que dépasser la limite).
+        """
         now = time.time()
         # Nettoyer les timestamps hors de la fenêtre
         while self._timestamps and now - self._timestamps[0] > self.window_seconds:

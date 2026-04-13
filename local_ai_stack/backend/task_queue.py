@@ -19,6 +19,7 @@ class LLMTaskQueue:
         self._queues: dict[str, asyncio.Queue] = {}
         self._workers: dict[str, asyncio.Task] = {}
         self._mutex = asyncio.Lock()
+        self._running: dict[str, int] = {}  # B2 : tracker tâche en cours d'exécution
 
     def _get_queue(self, llm: str) -> asyncio.Queue:
         if llm not in self._queues:
@@ -41,6 +42,8 @@ class LLMTaskQueue:
             except asyncio.CancelledError:
                 return
             coro, future = item
+            # B2 : incrémenter le compteur de tâches en cours
+            self._running[llm] = self._running.get(llm, 0) + 1
             try:
                 result = await coro
                 if not future.done():
@@ -49,6 +52,8 @@ class LLMTaskQueue:
                 if not future.done():
                     future.set_exception(e)
             finally:
+                # B2 : décrémenter après exécution
+                self._running[llm] = max(0, self._running.get(llm, 0) - 1)
                 queue.task_done()
 
     async def submit(self, llm: str, coro: Coroutine) -> Any:
@@ -56,14 +61,14 @@ class LLMTaskQueue:
 
         Correction C14 : retourne directement le résultat ou lève l'exception.
         """
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         queue = self._get_queue(llm)
         await queue.put((coro, future))
         await self._ensure_worker(llm)
         return await future
 
     def pending_count(self, llm: str) -> int:
-        """Retourne le nombre de tâches en attente dans la queue du LLM."""
+        """Nombre de tâches en queue + actuellement en cours d'exécution."""
         if llm not in self._queues:
-            return 0
-        return self._queues[llm].qsize()
+            return self._running.get(llm, 0)
+        return self._queues[llm].qsize() + self._running.get(llm, 0)

@@ -373,22 +373,36 @@ def start_backend(
     venv_python = os.path.join(os.path.dirname(os.path.dirname(__file__)), "venv", "bin", "python")
     python = venv_python if os.path.exists(venv_python) else sys.executable
 
+    # B5 : redirection vers fichier de log pour eviter le blocage du buffer kernel (~64KB)
+    from pathlib import Path as _Path
+    log_dir = _Path.home() / ".localcoder"
+    log_dir.mkdir(exist_ok=True)
+    log_file = open(log_dir / "backend.log", "ab")  # append binary
+
     process = subprocess.Popen(
         [python, "-m", "uvicorn", "backend.main:app",
          "--host", host, "--port", str(port)],
         cwd=os.path.dirname(os.path.dirname(__file__)),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,  # stderr → stdout → fichier
     )
 
     url = f"http://{host}:{port}/health"
     for attempt in range(max_retries):
         # Verifier que le processus est toujours vivant
         if process.poll() is not None:
-            stderr_output = process.stderr.read().decode(errors="ignore")[:500]
+            log_tail = ""
+            try:
+                with open(log_dir / "backend.log", "rb") as f:
+                    f.seek(0, 2)  # fin du fichier
+                    size = f.tell()
+                    f.seek(max(0, size - 1000), 0)  # last 1KB
+                    log_tail = f.read().decode(errors="ignore")
+            except Exception:
+                pass
             raise RuntimeError(
                 f"Backend a crache au demarrage (exit code {process.poll()}). "
-                f"Stderr: {stderr_output}"
+                f"Log: {log_tail[-500:]}"
             )
         try:
             resp = requests.get(url, timeout=1)
