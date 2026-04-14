@@ -72,3 +72,49 @@ async def test_route_with_mention(client):
     })
     data = resp.json()
     assert "deepseek" in data["llm"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint(app):
+    """POST /chat passe par l'orchestrateur et retourne le contenu."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    transport = ASGITransport(app=app)
+
+    # Mock task_queue.submit pour ne pas lancer un vrai LLM
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            fake_result = MagicMock(content="Voici la réponse", tokens=42, files_modified=[], attempts=1)
+            with patch.object(app.state.orchestrator.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+                resp = await client.post("/chat", json={"prompt": "Corrige un typo"})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["content"] == "Voici la réponse"
+    assert data["tokens"] == 42
+    assert "minimax" in data["llm"]
+
+
+@pytest.mark.asyncio
+async def test_project_status_inactive(app):
+    """GET /project/status retourne active=False par défaut."""
+    transport = ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/project/status")
+    assert resp.status_code == 200
+    assert resp.json()["active"] is False
+
+
+@pytest.mark.asyncio
+async def test_project_feedback_saved(app):
+    """POST /project/feedback persiste la correction."""
+    transport = ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/project/feedback", json={
+                "prompt": "Refacto module auth",
+                "routed_to": "minimax/minimax-m2.5",
+                "corrected_to": "deepseek/deepseek-r1",
+            })
+    assert resp.status_code == 200
+    assert resp.json()["saved"] is True

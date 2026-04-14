@@ -3,16 +3,19 @@
 Démarre via uvicorn (mode dev) ou comme subprocess de Tauri (mode prod).
 Exposition sur 127.0.0.1:8765 uniquement (sécurité locale).
 """
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from backend.models import LLMRole, LLMConfig, RoutingDecision
+from backend.models import LLMRole, LLMConfig, RoutingDecision, WSEvent
 from backend.llm_manager import LLMManager, FALLBACK_CHAINS
 from backend.router_engine import RouterEngine
 from backend.file_lock import FileLock
 from backend.task_queue import LLMTaskQueue
 from backend.ws_streamer import WSStreamer
+from backend.memory import LongTermMemory
+from backend.orchestrator import Orchestrator, OrchestratorRequest
 
 
 # ── Configuration des 5 LLMs ────────────────────────────────────────────────
@@ -34,13 +37,28 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
     Args:
         db_path: Chemin vers la DB SQLite. Changeable pour les tests.
     """
-    # ── Lifespan ─────────────────────────────────────────────────────────────
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        """Initialise les composants au démarrage, les nettoie à l'arrêt."""
-        # Init router DB
+        """Initialise LongTermMemory + RouterEngine + Orchestrator au démarrage."""
+        # Init DB LongTermMemory (4 tables)
+        long_memory = LongTermMemory(db_path=db_path)
+        await long_memory.init()
+
+        # Init RouterEngine DB (routing_feedback table)
         await app.state.router_engine.init_db()
+
+        # Créer l'orchestrateur (partage les mêmes composants)
+        app.state.orchestrator = Orchestrator(
+            llm_manager=app.state.llm_manager,
+            ws_streamer=app.state.ws_streamer,
+            file_lock=app.state.file_lock,
+            task_queue=app.state.task_queue,
+            db_path=db_path,
+        )
+        # Forcer les mêmes instances de mémoire (pour cohérence)
+        app.state.orchestrator.long_memory = long_memory
+
         yield
         # Shutdown — rien à faire (SQLite se ferme proprement)
 
@@ -89,6 +107,54 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
             "reason": decision.reason,
         }
 
+    @app.post("/chat")
+    async def chat(request: dict):
+        """Endpoint chat — passe par l'orchestrateur (routing + execution)."""
+        orch: Orchestrator = app.state.orchestrator
+        req = OrchestratorRequest(
+            user_id=request.get("user_id", "default"),
+            prompt=request["prompt"],
+            file_count=request.get("file_count", 0),
+            mention=request.get("mention"),
+        )
+        response = await orch.handle(req)
+        return {
+            "content": response.content,
+            "llm": response.llm_used,
+            "role": response.role.value,
+            "duration_ms": int(response.duration * 1000),
+            "tokens": response.tokens,
+            "reason": response.routing_reason,
+        }
+
+    @app.get("/project/status")
+    async def project_status():
+        """Retourne le statut de la roadmap active (Plan 4 l'utilisera pleinement)."""
+        orch: Orchestrator = app.state.orchestrator
+        if not orch.roadmap:
+            return {"active": False}
+        return {
+            "active": True,
+            "project": orch.roadmap.project,
+            "tasks": [
+                {"id": t.id, "title": t.title, "status": t.status, "sprint": t.sprint}
+                for t in orch.roadmap.tasks
+            ],
+        }
+
+    @app.post("/project/feedback")
+    async def project_feedback(request: dict):
+        """Correction de routage par l'utilisateur.
+        Body: {"prompt": "...", "routed_to": "...", "corrected_to": "..."}
+        """
+        orch: Orchestrator = app.state.orchestrator
+        await orch.long_memory.save_routing_feedback(
+            prompt=request["prompt"],
+            routed_to=request.get("routed_to", "unknown"),
+            corrected_to=request["corrected_to"],
+        )
+        return {"saved": True}
+
     @app.get("/llms")
     async def llms_list():
         """Liste les 5 LLMs avec leur statut actuel."""
@@ -120,13 +186,63 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        """WebSocket principal — temps réel entre backend et UI."""
+        """WebSocket principal — temps réel entre backend et UI.
+
+        Types de messages entrants (correction I8) :
+        - "chat" : {prompt, mention?} → route via orchestrator → émet chat_response
+        - "request_sys_stats" : accusé réception (Plan 4 émettra périodiquement)
+        - "request_file_tree" : stub vide pour l'instant
+        - "request_git_diff" : stub vide pour l'instant
+        """
         streamer: WSStreamer = app.state.ws_streamer
         session_id = await streamer.connect(websocket)
         try:
             while True:
                 raw = await websocket.receive_text()
-                # Le dispatching des messages WS sera étendu dans Plan 2 (correction I8)
+                try:
+                    msg = json.loads(raw)
+                    msg_type = msg.get("type")
+                    data = msg.get("data", {})
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+                if msg_type == "chat":
+                    orch: Orchestrator = app.state.orchestrator
+                    req = OrchestratorRequest(
+                        user_id=session_id,
+                        prompt=data.get("prompt", ""),
+                        file_count=data.get("file_count", 0),
+                        mention=data.get("mention"),
+                    )
+                    try:
+                        response = await orch.handle(req)
+                        await streamer.send_to(session_id, WSEvent(
+                            type="chat_response",
+                            data={
+                                "content": response.content,
+                                "llm": response.llm_used,
+                                "llmName": response.llm_used.split("/")[-1],
+                                "tokens": response.tokens,
+                                "durationMs": int(response.duration * 1000),
+                            },
+                            session_id=session_id,
+                        ))
+                    except Exception as e:
+                        await streamer.send_to(session_id, WSEvent(
+                            type="error",
+                            data={"message": str(e)[:300]},
+                            session_id=session_id,
+                        ))
+                elif msg_type == "request_file_tree":
+                    # Stub — Plan 4 étendra avec un vrai scanner
+                    await streamer.send_to(session_id, WSEvent(
+                        type="file_tree", data=[], session_id=session_id,
+                    ))
+                elif msg_type == "request_git_diff":
+                    await streamer.send_to(session_id, WSEvent(
+                        type="git_diff_files", data=[], session_id=session_id,
+                    ))
+                # request_sys_stats : Plan 4 ajoutera le broadcast automatique
         except WebSocketDisconnect:
             streamer.disconnect(session_id)
 
@@ -137,7 +253,5 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
 
 # NE PAS inclure de if __name__ == "__main__" ici.
 # Utiliser : uvicorn backend.main:app --host 127.0.0.1 --port 8765 --reload
-# Ou : python -m uvicorn backend.main:app --host 127.0.0.1 --port 8765
 
-# Variable au niveau module pour uvicorn
 app = create_app()
