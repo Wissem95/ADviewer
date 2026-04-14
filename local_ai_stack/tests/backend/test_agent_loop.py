@@ -40,7 +40,7 @@ async def test_agent_loop_success_no_lint_errors():
         '{"steps": [{"description": "Fix typo", "files": [], "action": "write"}]}',
         "# Code corrigé\nprint('hi')",
     ]
-    with patch.object(loop, "_step_check", return_value=[]):
+    with patch.object(loop, "_step_check", new=AsyncMock(return_value=[])):
         result = await loop.run("Corrige le typo")
     assert isinstance(result, AgentResult)
     assert result.attempts == 1
@@ -58,8 +58,7 @@ async def test_agent_loop_retry_on_lint_error():
         "Code corrigé",
     ]
     # Check : erreur puis OK
-    check_results = [["ruff: E501 line too long"], []]
-    with patch.object(loop, "_step_check", side_effect=check_results):
+    with patch.object(loop, "_step_check", new=AsyncMock(side_effect=[["ruff: E501 line too long"], []])):
         result = await loop.run("Fix typo")
     assert result.attempts == 2
     assert "Code corrigé" in result.content
@@ -75,7 +74,7 @@ async def test_agent_loop_raises_after_3_retries():
         "Code buggy 2",
         "Code buggy 3",
     ]
-    with patch.object(loop, "_step_check", return_value=["ruff: E501"]):
+    with patch.object(loop, "_step_check", new=AsyncMock(return_value=["ruff: E501"])):
         with pytest.raises(AgentLoopError) as exc_info:
             await loop.run("Fix typo")
     assert exc_info.value.step == "CHECK"
@@ -107,7 +106,7 @@ async def test_agent_loop_releases_locks_before_retry():
         "Code try 2",
     ]
     # 1er check échoue, 2e OK
-    with patch.object(loop, "_step_check", side_effect=[["ruff E501"], []]):
+    with patch.object(loop, "_step_check", new=AsyncMock(side_effect=[["ruff E501"], []])):
         result = await loop.run("Fix typo")
     # Après run, le lock doit être libéré (release all locks à la fin)
     assert loop.file_lock.who_has("auth.py") is None
@@ -122,7 +121,7 @@ async def test_agent_loop_emits_all_5_steps():
         '{"steps": []}',
         "Code OK",
     ]
-    with patch.object(loop, "_step_check", return_value=[]):
+    with patch.object(loop, "_step_check", new=AsyncMock(return_value=[])):
         await loop.run("Corrige typo")
     # Au moins 5 appels (PLAN, VERIFY, EXECUTE, CHECK, CONFIRM)
     emitted_steps = [call.args[0] for call in loop.ws.emit_step.call_args_list]
@@ -141,7 +140,7 @@ async def test_agent_loop_releases_locks_on_error():
         '{"steps": [{"description": "X", "files": ["f.py"], "action": "write"}]}',
         "buggy 1", "buggy 2", "buggy 3",
     ]
-    with patch.object(loop, "_step_check", return_value=["err"]):
+    with patch.object(loop, "_step_check", new=AsyncMock(return_value=["err"])):
         with pytest.raises(AgentLoopError):
             await loop.run("task")
     # Locks libérés même en cas d'erreur

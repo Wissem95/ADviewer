@@ -14,7 +14,6 @@ Correction C6 : les locks sont libérés avant retry pour permettre ré-acquisit
 import asyncio
 import json
 import re
-import subprocess
 from dataclasses import dataclass
 from typing import Optional
 
@@ -94,7 +93,7 @@ class AgentLoop:
             for attempt in range(1, self.MAX_RETRIES + 1):
                 last_attempt = attempt
                 await self.ws.emit_step("CHECK", self.decision.llm, attempt=attempt)
-                errors = self._step_check(files_modified)
+                errors = await self._step_check(files_modified)
 
                 if not errors:
                     break
@@ -118,7 +117,7 @@ class AgentLoop:
 
             # Étape 5 — CONFIRM
             await self.ws.emit_step("CONFIRM", self.decision.llm)
-            self._step_confirm(files_modified)
+            await self._step_confirm(files_modified)
 
             return AgentResult(
                 content=content,
@@ -196,47 +195,62 @@ class AgentLoop:
                         files_modified.append(filepath)
         return response, files_modified, 0  # tokens = 0 (litellm n'expose pas toujours)
 
-    def _step_check(self, files_modified: list[str]) -> list[str]:
+    async def _step_check(self, files_modified: list[str]) -> list[str]:
         """Lint : ruff pour .py, eslint pour .ts/.tsx/.js/.jsx. Retourne les erreurs.
 
-        Timeout 30s par fichier pour éviter les blocages.
+        Utilise asyncio.create_subprocess_exec pour ne pas bloquer l'event loop.
+        Timeout 30s par fichier.
         """
         errors = []
         for filepath in files_modified:
             if filepath.endswith(".py"):
-                try:
-                    result = subprocess.run(
-                        ["ruff", "check", filepath, "--output-format=text"],
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    if result.returncode != 0:
-                        errors.append(result.stdout[:500])
-                except (subprocess.TimeoutExpired, FileNotFoundError):
-                    pass
+                cmd = ["ruff", "check", filepath, "--output-format=text"]
             elif filepath.endswith((".ts", ".tsx", ".js", ".jsx")):
+                cmd = ["npx", "eslint", filepath, "--format=compact"]
+            else:
+                continue
+
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
                 try:
-                    result = subprocess.run(
-                        ["npx", "eslint", filepath, "--format=compact"],
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    if result.returncode != 0:
-                        errors.append(result.stdout[:500])
-                except (subprocess.TimeoutExpired, FileNotFoundError):
-                    pass
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                    continue
+                if proc.returncode != 0:
+                    errors.append(stdout.decode(errors="ignore")[:500])
+            except (FileNotFoundError, PermissionError):
+                # Outil lint non installe — on continue sans bloquer
+                continue
         return errors
 
-    def _step_confirm(self, files_modified: list[str]) -> str:
-        """Génère un git diff pour les fichiers modifiés (affiché dans l'UI)."""
+    async def _step_confirm(self, files_modified: list[str]) -> str:
+        """Génère un git diff pour les fichiers modifiés (affiché dans l'UI).
+
+        Utilise asyncio.create_subprocess_exec (non-blocking).
+        """
         diffs = []
         for filepath in files_modified:
             try:
-                result = subprocess.run(
-                    ["git", "diff", filepath],
-                    capture_output=True, text=True, timeout=10,
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "diff", filepath,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
-                if result.stdout:
-                    diffs.append(result.stdout[:2000])
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+                try:
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                    continue
+                if stdout:
+                    diffs.append(stdout.decode(errors="ignore")[:2000])
+            except (FileNotFoundError, PermissionError):
                 continue
         return "\n".join(diffs)
 

@@ -38,7 +38,11 @@ async def test_orchestrator_handle_returns_response(tmp_path):
     fake_result.content = "Voici le code corrigé"
     fake_result.tokens = 150
 
-    with patch.object(orch.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+    async def _fake_submit(llm, coro):
+        coro.close()  # Fermer la coroutine non utilisée
+        return fake_result
+
+    with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
         request = OrchestratorRequest(
             user_id="user-1",
             prompt="Corrige un typo dans bouton.py",
@@ -61,7 +65,11 @@ async def test_orchestrator_emits_routing_event(tmp_path):
 
     fake_result = MagicMock(content="Code", tokens=50)
 
-    with patch.object(orch.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+    async def _fake_submit(llm, coro):
+        coro.close()
+        return fake_result
+
+    with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
         with patch.object(orch.ws, "emit_routing", new=AsyncMock()) as mock_emit:
             await orch.handle(OrchestratorRequest(user_id="u1", prompt="Fix typo"))
 
@@ -77,7 +85,11 @@ async def test_orchestrator_mention_override(tmp_path):
 
     fake_result = MagicMock(content="Plan archi", tokens=300)
 
-    with patch.object(orch.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+    async def _fake_submit(llm, coro):
+        coro.close()
+        return fake_result
+
+    with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
         request = OrchestratorRequest(
             user_id="u1",
             prompt="Refactore tout le module auth",
@@ -113,7 +125,11 @@ async def test_orchestrator_records_action_in_short_memory(tmp_path):
 
     fake_result = MagicMock(content="Code", tokens=50)
 
-    with patch.object(orch.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+    async def _fake_submit(llm, coro):
+        coro.close()
+        return fake_result
+
+    with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
         await orch.handle(OrchestratorRequest(user_id="u1", prompt="Fix typo"))
 
     assert len(orch.short_memory.actions) == 1
@@ -129,7 +145,11 @@ async def test_orchestrator_saves_decision_in_long_memory(tmp_path):
 
     fake_result = MagicMock(content="Voici une réponse", tokens=50)
 
-    with patch.object(orch.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+    async def _fake_submit(llm, coro):
+        coro.close()
+        return fake_result
+
+    with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
         await orch.handle(OrchestratorRequest(user_id="u1", prompt="Fix typo"))
 
     decisions = await orch.long_memory.get_recent_decisions()

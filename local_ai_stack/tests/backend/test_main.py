@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, MagicMock, patch
 from backend.main import create_app
 
 
@@ -77,14 +78,18 @@ async def test_route_with_mention(client):
 @pytest.mark.asyncio
 async def test_chat_endpoint(app):
     """POST /chat passe par l'orchestrateur et retourne le contenu."""
-    from unittest.mock import AsyncMock, MagicMock, patch
     transport = ASGITransport(app=app)
 
-    # Mock task_queue.submit pour ne pas lancer un vrai LLM
+    # Helper qui consomme proprement la coroutine passée à submit
+    fake_result = MagicMock(content="Voici la réponse", tokens=42, files_modified=[], attempts=1)
+
+    async def _fake_submit(llm, coro):
+        coro.close()  # Fermer la coroutine non utilisée pour éviter RuntimeWarning
+        return fake_result
+
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            fake_result = MagicMock(content="Voici la réponse", tokens=42, files_modified=[], attempts=1)
-            with patch.object(app.state.orchestrator.task_queue, "submit", new=AsyncMock(return_value=fake_result)):
+            with patch.object(app.state.orchestrator.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
                 resp = await client.post("/chat", json={"prompt": "Corrige un typo"})
 
     assert resp.status_code == 200
@@ -118,3 +123,46 @@ async def test_project_feedback_saved(app):
             })
     assert resp.status_code == 200
     assert resp.json()["saved"] is True
+
+
+def test_websocket_chat_handler(tmp_path):
+    """WebSocket /ws dispatche type='chat' vers orchestrator et émet chat_response (correction I8)."""
+    from fastapi.testclient import TestClient
+
+    app = create_app(db_path=str(tmp_path / "ws.db"))
+
+    # Précharger l'orchestrateur via startup events
+    with TestClient(app) as client:
+        # Mock task_queue.submit pour ne pas lancer un vrai LLM
+        fake_result = MagicMock(
+            content="Voici la réponse",
+            tokens=42,
+            files_modified=[],
+            attempts=1,
+        )
+
+        async def _fake_submit(llm, coro):
+            coro.close()
+            return fake_result
+
+        with patch.object(
+            client.app.state.orchestrator.task_queue,
+            "submit",
+            new=AsyncMock(side_effect=_fake_submit),
+        ):
+            with client.websocket_connect("/ws") as ws:
+                # Envoyer un chat
+                ws.send_json({"type": "chat", "data": {"prompt": "Corrige un typo"}})
+                # Recevoir possiblement plusieurs events (routing_decision, agent_step*, chat_response)
+                # On cherche le chat_response
+                chat_response = None
+                for _ in range(20):  # max 20 messages avant timeout
+                    msg = ws.receive_json()
+                    if msg.get("type") == "chat_response":
+                        chat_response = msg
+                        break
+
+                assert chat_response is not None
+                assert chat_response["data"]["content"] == "Voici la réponse"
+                assert chat_response["data"]["tokens"] == 42
+                assert "minimax" in chat_response["data"]["llm"]
