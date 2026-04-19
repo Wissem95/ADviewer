@@ -140,6 +140,18 @@ async def test_long_memory_save_roadmap_history(db_path):
     assert row["action"] == "created"
 
 
+def test_short_memory_actions_rotates_at_max_actions():
+    """Au-delà de MAX_ACTIONS, rotation FIFO (les plus anciennes sont supprimées)."""
+    mem = ShortTermMemory()
+    for i in range(mem.MAX_ACTIONS + 5):
+        mem.record_action("minimax", f"action{i}", "")
+    assert len(mem.actions) == mem.MAX_ACTIONS
+    # Les 5 premières doivent avoir été supprimées
+    assert mem.actions[0]["action"] == "action5"
+    # Les dernières sont préservées
+    assert mem.actions[-1]["action"] == f"action{mem.MAX_ACTIONS + 4}"
+
+
 @pytest.mark.asyncio
 async def test_long_memory_save_llm_message(db_path):
     """llm_messages table : persister les messages inter-LLMs."""

@@ -21,6 +21,7 @@ class ShortTermMemory:
     """Mémoire de session — effacée à la fermeture.
 
     Max 5 rounds de consultation inter-LLMs pour éviter les boucles infinies.
+    Max 1000 actions en mémoire courante (rotation FIFO).
     """
     session_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     active_task: str = ""
@@ -29,9 +30,12 @@ class ShortTermMemory:
     messages: list[dict] = field(default_factory=list)
     consultation_rounds: int = 0
     MAX_ROUNDS: int = 5
+    MAX_ACTIONS: int = 1000
 
     def record_action(self, llm: str, action: str, detail: str = "") -> None:
-        """Enregistre une action dans le journal temps réel."""
+        """Enregistre une action dans le journal temps réel. Rotation FIFO si dépasse MAX_ACTIONS."""
+        if len(self.actions) >= self.MAX_ACTIONS:
+            self.actions.pop(0)
         self.actions.append({
             "llm": llm,
             "action": action,

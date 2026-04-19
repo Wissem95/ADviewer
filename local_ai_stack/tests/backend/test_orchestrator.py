@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from backend.orchestrator import Orchestrator, OrchestratorRequest, OrchestratorResponse
+from backend.memory import ShortTermMemory
 from backend.models import LLMRole
 from backend.roadmap import ProjectRoadmap
 
@@ -130,7 +131,7 @@ async def test_orchestrator_records_action_in_short_memory(tmp_path):
         return fake_result
 
     with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
-        await orch.handle(OrchestratorRequest(user_id="u1", prompt="Fix typo"))
+        await orch.handle(OrchestratorRequest(user_id="default", prompt="Fix typo"))
 
     assert len(orch.short_memory.actions) == 1
     assert orch.short_memory.actions[0]["action"] == "handle"
@@ -155,3 +156,30 @@ async def test_orchestrator_saves_decision_in_long_memory(tmp_path):
     decisions = await orch.long_memory.get_recent_decisions()
     assert len(decisions) >= 1
     assert "Voici une réponse" in decisions[0]["content"] or decisions[0]["type"] == "routing"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_isolates_sessions_per_user(tmp_path):
+    """Deux user_id différents → deux ShortTermMemory isolées."""
+    orch = _make_orchestrator(tmp_path)
+    await orch.long_memory.init()
+    await orch.router.init_db()
+
+    fake_result = MagicMock(content="Code", tokens=50)
+
+    async def _fake_submit(llm, coro):
+        coro.close()
+        return fake_result
+
+    with patch.object(orch.task_queue, "submit", new=AsyncMock(side_effect=_fake_submit)):
+        await orch.handle(OrchestratorRequest(user_id="user-A", prompt="Fix typo A"))
+        await orch.handle(OrchestratorRequest(user_id="user-B", prompt="Fix typo B"))
+
+    mem_a = orch._get_short_memory("user-A")
+    mem_b = orch._get_short_memory("user-B")
+    assert mem_a is not mem_b
+    assert mem_a.session_id != mem_b.session_id
+    assert len(mem_a.actions) == 1
+    assert len(mem_b.actions) == 1
+    assert "A" in mem_a.actions[0]["detail"]
+    assert "B" in mem_b.actions[0]["detail"]

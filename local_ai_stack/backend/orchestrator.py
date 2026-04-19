@@ -64,9 +64,20 @@ class Orchestrator:
         self.file_lock = file_lock
         self.task_queue = task_queue
         self.router = RouterEngine(db_path=db_path)
-        self.short_memory = ShortTermMemory()
+        self.short_memories: dict[str, ShortTermMemory] = {}
         self.long_memory = LongTermMemory(db_path=db_path)
         self.roadmap: Optional[ProjectRoadmap] = None
+
+    def _get_short_memory(self, user_id: str) -> ShortTermMemory:
+        """Retourne (ou crée) la ShortTermMemory pour ce user_id."""
+        if user_id not in self.short_memories:
+            self.short_memories[user_id] = ShortTermMemory()
+        return self.short_memories[user_id]
+
+    @property
+    def short_memory(self) -> ShortTermMemory:
+        """Compat : retourne la mémoire 'default' (pour les tests legacy)."""
+        return self._get_short_memory("default")
 
     async def handle(self, request: OrchestratorRequest) -> OrchestratorResponse:
         """Point d'entrée principal pour toute requête utilisateur.
@@ -112,14 +123,15 @@ class Orchestrator:
         )
 
         # 5. Mémoire longue + courte
+        user_mem = self._get_short_memory(request.user_id)
         await self.long_memory.save_decision(
-            session_id=self.short_memory.session_id,
+            session_id=user_mem.session_id,
             llm=decision.llm,
             dtype="routing",
             content=str(result.content)[:500],
             rationale=decision.reason,
         )
-        self.short_memory.record_action(
+        user_mem.record_action(
             llm=decision.llm,
             action="handle",
             detail=request.prompt[:100],

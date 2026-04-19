@@ -1,12 +1,16 @@
 import pytest
+import pytest_asyncio
 from backend.router_engine import RouterEngine
+from backend.memory import LongTermMemory
 from backend.models import LLMRole
 
 
-@pytest.fixture
-def router(tmp_path):
-    """RouterEngine avec DB temporaire."""
+@pytest_asyncio.fixture
+async def router(tmp_path):
+    """RouterEngine avec DB temporaire. Schéma initialisé via LongTermMemory (source unique)."""
     db_path = str(tmp_path / "router.db")
+    mem = LongTermMemory(db_path=db_path)
+    await mem.init()
     return RouterEngine(db_path=db_path)
 
 

@@ -55,20 +55,6 @@ PROJECT_KEYWORDS = [
 ]
 
 
-# ── SQL ──────────────────────────────────────────────────────────────────────
-
-_CREATE_FEEDBACK_TABLE = """
-CREATE TABLE IF NOT EXISTS routing_feedback (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    prompt_hash  TEXT    NOT NULL,
-    routed_to    TEXT    NOT NULL,
-    corrected_to TEXT    NOT NULL,
-    pattern      TEXT    DEFAULT '',
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
-
-
 def _hash_prompt(prompt: str) -> str:
     """Hash court et déterministe pour indexer les feedbacks."""
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
@@ -89,9 +75,11 @@ class RouterEngine:
         self.db_path = db_path
 
     async def init_db(self) -> None:
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(_CREATE_FEEDBACK_TABLE)
-            await db.commit()
+        """No-op — le schéma routing_feedback est créé par LongTermMemory.init().
+
+        Cette méthode est gardée pour compat avec le code appelant (main.py lifespan).
+        """
+        pass
 
     # ── Méthode principale ───────────────────────────────────────────────────
 
