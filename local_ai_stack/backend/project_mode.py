@@ -102,7 +102,11 @@ class ProjectMode:
     MAX_CI_RETRIES = 3
     # Polling par défaut du CI GitHub Actions (secondes).
     CI_POLL_INTERVAL = 30
-    CI_TIMEOUT = 600  # 10 minutes max par PR
+    # Timeout par PR pour attendre la fin des checks GitHub Actions.
+    # 10 min : correct pour un CI Python/JS standard (install + lint + pytest).
+    # À augmenter si vos workflows incluent un docker build, des E2E ou du
+    # matrix testing (facilement 15-20 min). Passer via arg ou sous-classe.
+    CI_TIMEOUT = 600
 
     def __init__(
         self,
@@ -261,7 +265,9 @@ Règles :
         """Crée Milestones + Issues + workflow CI, retourne la ProjectRoadmap."""
         await self.ws.emit_step("GITHUB_SETUP", "orchestrator")
 
-        self.github.write_workflow_file()
+        # Suggestion review : écrit dans le repo local connu par GitService,
+        # pas dans cwd (qui peut différer selon comment le backend est lancé).
+        self.github.write_workflow_file(repo_path=str(self.git.repo_path))
 
         for sprint in sprints:
             self.github.create_milestone(sprint.sprint_name)

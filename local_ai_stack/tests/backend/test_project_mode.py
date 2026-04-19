@@ -121,13 +121,17 @@ async def test_generate_sprints_calls_r1():
 @pytest.mark.asyncio
 async def test_create_github_structure_returns_roadmap():
     pm = _make_project_mode()
+    # Suggestion review : write_workflow_file reçoit git.repo_path
+    pm.git.repo_path = "/fake/project/root"
     cdc = pm._parse_cdc(_sample_cdc_json())
     sprints = pm._parse_sprints(_sample_sprint_json())
     roadmap = await pm.create_github_structure(cdc, sprints)
     assert isinstance(roadmap, ProjectRoadmap)
     assert len(roadmap.tasks) == 1
     assert roadmap.tasks[0].github_issue == 42
-    pm.github.write_workflow_file.assert_called_once()
+    pm.github.write_workflow_file.assert_called_once_with(
+        repo_path="/fake/project/root"
+    )
 
 
 def test_is_project_request():

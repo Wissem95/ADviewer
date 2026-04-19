@@ -5,7 +5,10 @@ Exposition sur 127.0.0.1:8765 uniquement (sécurité locale).
 """
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 import psutil
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -198,12 +201,20 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
                 + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
             )
             if not hmac.compare_digest(signature, expected):
+                logger.warning(
+                    "ci_webhook rejeté : signature invalide (header=%s...)",
+                    signature[:20],
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"ok": False, "error": "invalid signature"},
                 )
         elif not allow_unsigned:
             # #CRIT4 fail-secure : pas de secret configuré, pas d'override.
+            logger.warning(
+                "ci_webhook rejeté : ni GITHUB_WEBHOOK_SECRET ni "
+                "LOCALCODER_ALLOW_UNSIGNED_WEBHOOK configurés."
+            )
             return JSONResponse(
                 status_code=401,
                 content={
@@ -235,6 +246,13 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
             p.get("number")
             for p in payload.get("check_suite", {}).get("pull_requests", [])
         ]
+
+        logger.info(
+            "ci_webhook event=%s conclusion=%s pr=%s",
+            event,
+            conclusion,
+            pr_numbers,
+        )
 
         streamer: WSStreamer = app.state.ws_streamer
         for pr_number in pr_numbers:

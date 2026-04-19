@@ -279,6 +279,55 @@ async def test_ci_webhook_refuses_unsigned_by_default(app, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ci_webhook_logs_inbound_events(app, monkeypatch, caplog):
+    """Logs : webhook valide doit tracer event + conclusion pour debug."""
+    import logging
+
+    monkeypatch.setenv("LOCALCODER_ALLOW_UNSIGNED_WEBHOOK", "1")
+    caplog.set_level(logging.INFO, logger="backend.main")
+    async with app.router.lifespan_context(app):
+        app.state.ws_streamer.broadcast = AsyncMock()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/ci-webhook",
+                headers={"X-GitHub-Event": "check_run"},
+                json={
+                    "check_run": {
+                        "conclusion": "success",
+                        "pull_requests": [{"number": 42}],
+                    }
+                },
+            )
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "check_run" in text
+    assert "success" in text
+    assert "42" in text
+
+
+@pytest.mark.asyncio
+async def test_ci_webhook_logs_rejected_signature(app, monkeypatch, caplog):
+    """Signature invalide → warning loggé avec contexte."""
+    import logging
+
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "s3cr3t")
+    caplog.set_level(logging.WARNING, logger="backend.main")
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/ci-webhook",
+                headers={
+                    "X-GitHub-Event": "check_run",
+                    "X-Hub-Signature-256": "sha256=bad",
+                },
+                json={"check_run": {"conclusion": "success", "pull_requests": []}},
+            )
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "signature" in text.lower()
+
+
+@pytest.mark.asyncio
 async def test_ci_webhook_valid_signature_accepted(app, monkeypatch):
     """#CRIT3 miroir : signature correcte → 200."""
     import hashlib

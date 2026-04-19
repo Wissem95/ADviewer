@@ -39,6 +39,10 @@ class GitHubService:
             )
         gh = Github(self._token)
         self._repo = gh.get_repo(self._repo_name)
+        # Cache des labels existants sur le repo : get_labels() est appelé
+        # une fois puis réutilisé pour filtrer les labels passés à
+        # create_issue_from_task (évite 1 call API par ticket sur 50 tickets).
+        self._labels_cache: set[str] | None = None
 
     # ── Issues ───────────────────────────────────────────────────────────────
 
@@ -279,9 +283,14 @@ jobs:
     # ── Helpers internes ─────────────────────────────────────────────────────
 
     def _ensure_labels(self, label_names: list[str]) -> list[str]:
-        """Retourne les labels qui existent dans le repo (ignore les autres)."""
-        try:
-            existing = {label.name for label in self._repo.get_labels()}
-            return [name for name in label_names if name in existing]
-        except GithubException:
-            return []
+        """Retourne les labels qui existent dans le repo (ignore les autres).
+
+        Cache les noms de labels sur l'instance après le 1er appel pour
+        éviter N appels get_labels() sur N issues créées successivement.
+        """
+        if self._labels_cache is None:
+            try:
+                self._labels_cache = {lbl.name for lbl in self._repo.get_labels()}
+            except GithubException:
+                self._labels_cache = set()
+        return [name for name in label_names if name in self._labels_cache]

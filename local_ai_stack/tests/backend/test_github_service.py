@@ -170,6 +170,26 @@ def test_github_service_get_pr_check_status_failure():
     assert svc.get_pr_check_status(10) == "failure"
 
 
+def test_ensure_labels_caches_get_labels_call():
+    """Cache : get_labels() appelé 1× même sur N create_issue successifs."""
+    svc = _make_service()
+    # On simule un repo avec 2 labels dispo
+    sprint1_label = MagicMock(); sprint1_label.name = "sprint-1"
+    pending_label = MagicMock(); pending_label.name = "pending"
+    svc._repo.get_labels.return_value = [sprint1_label, pending_label]
+    svc._repo.create_issue = MagicMock(return_value=MagicMock(number=1))
+
+    task = Task(
+        id="T-001", title="X", status="pending", assigned_to="",
+        sprint="Sprint 1", estimated_complexity=3,
+    )
+    svc.create_issue_from_task(task)
+    svc.create_issue_from_task(task)
+    svc.create_issue_from_task(task)
+    # get_labels ne doit être appelé qu'une seule fois (cache instance).
+    assert svc._repo.get_labels.call_count == 1
+
+
 def test_github_service_write_workflow_file(tmp_path):
     svc = _make_service()
     svc.write_workflow_file(repo_path=str(tmp_path))
