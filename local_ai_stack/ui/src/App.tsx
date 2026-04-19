@@ -1,50 +1,61 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { lazy, Suspense, useState } from "react";
+import { ActivityBar } from "./components/ActivityBar/ActivityBar";
+import { StatusBar } from "./components/StatusBar/StatusBar";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+const ChatTab = lazy(() => import("./components/tabs/ChatTab/ChatTab"));
+const TerminalsTab = lazy(() => import("./components/tabs/TerminalsTab/TerminalsTab"));
+const RoutingTab = lazy(() => import("./components/tabs/RoutingTab/RoutingTab"));
+const MonitoringTab = lazy(() => import("./components/tabs/MonitoringTab/MonitoringTab"));
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+export type Tab = "chat" | "terminals" | "routing" | "monitoring";
+
+const TAB_LABELS: Record<Tab, string> = {
+  chat: "Chat",
+  terminals: "Terminaux",
+  routing: "Routing Flow",
+  monitoring: "Monitoring",
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<Tab>("chat");
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg">
+      <div className="flex flex-1 overflow-hidden">
+        <ActivityBar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex border-b border-border bg-panel shrink-0" role="tablist">
+            {(Object.keys(TAB_LABELS) as Tab[]).map((tab) => {
+              const selected = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveTab(tab)}
+                  className={[
+                    "px-4 py-2 text-sm font-medium transition-colors",
+                    selected
+                      ? "text-text border-b-2 border-accent bg-bg"
+                      : "text-muted hover:text-text",
+                  ].join(" ")}
+                >
+                  {TAB_LABELS[tab]}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <Suspense fallback={<div className="p-4 text-muted">Chargement...</div>}>
+              {activeTab === "chat" && <ChatTab />}
+              {activeTab === "terminals" && <TerminalsTab />}
+              {activeTab === "routing" && <RoutingTab />}
+              {activeTab === "monitoring" && <MonitoringTab />}
+            </Suspense>
+          </div>
+        </div>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <StatusBar />
+    </div>
   );
 }
-
-export default App;
