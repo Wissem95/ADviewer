@@ -25,7 +25,7 @@ describe("App layout", () => {
     );
     expect(screen.getByRole("tab", { name: "Chat" }).getAttribute("aria-selected")).toBe("false");
     await waitFor(() => {
-      expect(screen.getByText(/Monitoring Tab/)).toBeInTheDocument();
+      expect(screen.getByTestId("monitoring-grid")).toBeInTheDocument();
     });
   });
 });
