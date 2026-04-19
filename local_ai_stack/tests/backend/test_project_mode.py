@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -149,6 +149,8 @@ async def test_execute_ticket_c9_restore_initial_branch():
     pm.git.push = MagicMock()
     pm.git.create_branch = MagicMock()
     pm.git.checkout = MagicMock()
+    pm.github.create_pr = MagicMock(return_value=77)
+    pm._wait_for_ci = AsyncMock(return_value=True)
 
     task = Task(
         id="T-001",
@@ -165,7 +167,7 @@ async def test_execute_ticket_c9_restore_initial_branch():
     async def fake_coro():
         return fake_result
 
-    success = await pm.execute_ticket(task, roadmap, fake_coro())
+    success = await pm.execute_ticket(task, roadmap, fake_coro)
     assert success is True
     # C9 : checkout appelé avec la branche initiale exacte, pas repo.heads[0].
     pm.git.checkout.assert_any_call("develop")
@@ -182,6 +184,8 @@ async def test_execute_ticket_c10_push_uses_branch_name_directly():
     pm.git.push = MagicMock()
     pm.git.create_branch = MagicMock()
     pm.git.checkout = MagicMock()
+    pm.github.create_pr = MagicMock(return_value=77)
+    pm._wait_for_ci = AsyncMock(return_value=True)
 
     task = Task(id="T-007", title="Login", status="pending", github_issue=99)
     roadmap = ProjectRoadmap(project="demo")
@@ -190,11 +194,70 @@ async def test_execute_ticket_c10_push_uses_branch_name_directly():
     async def fake_coro():
         return MagicMock(content="ok")
 
-    await pm.execute_ticket(task, roadmap, fake_coro())
+    await pm.execute_ticket(task, roadmap, fake_coro)
     push_kwargs = pm.git.push.call_args[1]
     expected_branch = "feature/t-007-login"
     assert push_kwargs["branch"] == expected_branch
     assert not push_kwargs["branch"].startswith("feature/feature/")
+
+
+@pytest.mark.asyncio
+async def test_wait_for_ci_returns_true_on_success():
+    """_wait_for_ci poll jusqu'à success."""
+    pm = _make_project_mode()
+    # pending puis success
+    pm.github.get_pr_check_status = MagicMock(side_effect=["pending", "success"])
+    with patch("backend.project_mode.asyncio.sleep", new=AsyncMock()):
+        ok = await pm._wait_for_ci(pr_number=10, poll_interval=0, timeout=60)
+    assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_wait_for_ci_returns_false_on_failure():
+    pm = _make_project_mode()
+    pm.github.get_pr_check_status = MagicMock(return_value="failure")
+    with patch("backend.project_mode.asyncio.sleep", new=AsyncMock()):
+        ok = await pm._wait_for_ci(pr_number=10, poll_interval=0, timeout=60)
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_wait_for_ci_timeout_returns_false():
+    """Jamais terminé → timeout → False."""
+    pm = _make_project_mode()
+    pm.github.get_pr_check_status = MagicMock(return_value="pending")
+    with patch("backend.project_mode.asyncio.sleep", new=AsyncMock()):
+        ok = await pm._wait_for_ci(pr_number=10, poll_interval=0, timeout=0)
+    # timeout=0 avec poll_interval=0 : la 1re itération dépasse déjà le timeout
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_execute_ticket_retries_on_ci_failure():
+    """Si CI failure au 1er tour, execute_ticket doit retry puis succeed au 2e."""
+    pm = _make_project_mode()
+    pm.git.get_current_branch = MagicMock(return_value="main")
+    pm.git.get_modified_files = MagicMock(return_value=["a.py"])
+    pm.git.stage = MagicMock()
+    pm.git.commit = MagicMock()
+    pm.git.push = MagicMock()
+    pm.git.create_branch = MagicMock()
+    pm.git.checkout = MagicMock()
+    pm.github.create_pr = MagicMock(return_value=77)
+    # 1er tour CI rouge, 2e tour CI vert
+    pm._wait_for_ci = AsyncMock(side_effect=[False, True])
+
+    task = Task(id="T-008", title="Sign up", status="pending", github_issue=55)
+    roadmap = ProjectRoadmap(project="demo")
+    roadmap.tasks.append(task)
+
+    async def fake_coro():
+        return MagicMock(content="ok")
+
+    success = await pm.execute_ticket(task, roadmap, fake_coro)
+    assert success is True
+    assert pm._wait_for_ci.await_count == 2
+    assert roadmap.tasks[0].status == "done"
 
 
 @pytest.mark.asyncio
@@ -204,6 +267,8 @@ async def test_execute_ticket_marks_done_on_success():
     pm.git.get_modified_files = MagicMock(return_value=[])
     pm.git.create_branch = MagicMock()
     pm.git.checkout = MagicMock()
+    pm.github.create_pr = MagicMock(return_value=77)
+    pm._wait_for_ci = AsyncMock(return_value=True)
 
     task = Task(id="T-007", title="Login", status="pending", github_issue=99)
     roadmap = ProjectRoadmap(project="demo")
@@ -212,5 +277,5 @@ async def test_execute_ticket_marks_done_on_success():
     async def fake_coro():
         return MagicMock(content="ok")
 
-    await pm.execute_ticket(task, roadmap, fake_coro())
+    await pm.execute_ticket(task, roadmap, fake_coro)
     assert roadmap.tasks[0].status == "done"

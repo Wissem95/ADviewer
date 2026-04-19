@@ -232,7 +232,39 @@ jobs:
         run: |
           gh pr merge ${{ github.event.pull_request.number }} \\
             --squash --auto
+
+      # NB : en option, configurer un webhook repo Settings > Webhooks vers
+      # votre backend local (via tunnel) pour POST /ci-webhook recevoir
+      # check_run / check_suite events et déclencher un retry Niveau 2.
 """
+
+    def get_pr_check_status(self, pr_number: int) -> str:
+        """Retourne le statut agrégé des check runs pour le HEAD de la PR.
+
+        Mapping :
+          - aucun run, ou au moins un run pas encore "completed" -> "pending"
+          - tous "completed" ET un ou plusieurs "failure"/"cancelled" -> "failure"
+          - tous "completed" ET tous "success"/"neutral"/"skipped" -> "success"
+        """
+        try:
+            pr = self._repo.get_pull(pr_number)
+            commit = self._repo.get_commit(pr.head.sha)
+            runs = list(commit.get_check_runs())
+        except GithubException as e:
+            raise GitHubServiceError(
+                f"Impossible de lire les check runs de la PR #{pr_number}: {e}"
+            ) from e
+
+        if not runs:
+            return "pending"
+        if any(r.status != "completed" for r in runs):
+            return "pending"
+        if any(
+            r.conclusion in ("failure", "cancelled", "timed_out", "action_required")
+            for r in runs
+        ):
+            return "failure"
+        return "success"
 
     def write_workflow_file(self, repo_path: str = ".") -> None:
         """Écrit ticket-validation.yml dans .github/workflows/ du repo local."""

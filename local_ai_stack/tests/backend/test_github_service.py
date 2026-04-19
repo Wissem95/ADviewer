@@ -116,6 +116,47 @@ def test_github_service_generate_actions_yaml_contains_ticket_extraction():
     assert "GITHUB_TOKEN" in yaml_content
 
 
+def test_github_service_get_pr_check_status_pending():
+    """Aucun run terminé → 'pending'."""
+    svc = _make_service()
+    mock_pr = MagicMock()
+    mock_pr.head.sha = "abc"
+    svc._repo.get_pull.return_value = mock_pr
+    mock_commit = MagicMock()
+    mock_commit.get_check_runs.return_value = []
+    svc._repo.get_commit.return_value = mock_commit
+    assert svc.get_pr_check_status(10) == "pending"
+
+
+def test_github_service_get_pr_check_status_success():
+    """Tous les runs terminés avec conclusion='success' → 'success'."""
+    svc = _make_service()
+    mock_pr = MagicMock()
+    mock_pr.head.sha = "abc"
+    svc._repo.get_pull.return_value = mock_pr
+
+    run = MagicMock(status="completed", conclusion="success")
+    mock_commit = MagicMock()
+    mock_commit.get_check_runs.return_value = [run]
+    svc._repo.get_commit.return_value = mock_commit
+    assert svc.get_pr_check_status(10) == "success"
+
+
+def test_github_service_get_pr_check_status_failure():
+    """Un run avec conclusion='failure' → 'failure' (échec global)."""
+    svc = _make_service()
+    mock_pr = MagicMock()
+    mock_pr.head.sha = "abc"
+    svc._repo.get_pull.return_value = mock_pr
+
+    ok = MagicMock(status="completed", conclusion="success")
+    ko = MagicMock(status="completed", conclusion="failure")
+    mock_commit = MagicMock()
+    mock_commit.get_check_runs.return_value = [ok, ko]
+    svc._repo.get_commit.return_value = mock_commit
+    assert svc.get_pr_check_status(10) == "failure"
+
+
 def test_github_service_write_workflow_file(tmp_path):
     svc = _make_service()
     svc.write_workflow_file(repo_path=str(tmp_path))

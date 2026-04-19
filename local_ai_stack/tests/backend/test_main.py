@@ -207,6 +207,57 @@ async def test_project_start_endpoint_wires_orchestrator(app):
 
 
 @pytest.mark.asyncio
+async def test_ci_webhook_emits_ci_status_success(app):
+    """POST /ci-webhook avec conclusion=success broadcast un WSEvent ci_status."""
+    async with app.router.lifespan_context(app):
+        broadcasts: list = []
+
+        async def capture(event):
+            broadcasts.append(event)
+
+        app.state.ws_streamer.broadcast = capture
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/ci-webhook",
+                headers={"X-GitHub-Event": "check_run"},
+                json={
+                    "check_run": {
+                        "conclusion": "success",
+                        "html_url": "https://github.com/u/r/pulls/42",
+                        "pull_requests": [{"number": 42}],
+                    }
+                },
+            )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert any(
+        e.type == "ci_status" and e.data["ticketId"] == "PR-42"
+        and e.data["status"] == "success"
+        for e in broadcasts
+    )
+
+
+@pytest.mark.asyncio
+async def test_ci_webhook_rejects_bad_signature(app, monkeypatch):
+    """Si GITHUB_WEBHOOK_SECRET défini, signature invalide → ok:false."""
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "s3cr3t")
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/ci-webhook",
+                headers={
+                    "X-GitHub-Event": "check_run",
+                    "X-Hub-Signature-256": "sha256=badsig",
+                },
+                json={"check_run": {"conclusion": "success", "pull_requests": []}},
+            )
+    assert resp.json() == {"ok": False, "error": "invalid signature"}
+
+
+@pytest.mark.asyncio
 async def test_broadcast_sys_stats_emits_cpu_ram():
     """_broadcast_sys_stats émet un event sys_stats puis est annulé proprement."""
     from backend.main import _broadcast_sys_stats

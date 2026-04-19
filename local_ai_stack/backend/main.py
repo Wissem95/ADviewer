@@ -8,7 +8,7 @@ import json
 from contextlib import asynccontextmanager
 
 import psutil
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 
 from backend.models import LLMRole, LLMConfig, RoutingDecision, WSEvent
 from backend.llm_manager import LLMManager, FALLBACK_CHAINS
@@ -157,6 +157,78 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
             "duration_ms": int(response.duration * 1000),
             "tokens": response.tokens,
             "reason": response.routing_reason,
+        }
+
+    @app.post("/ci-webhook")
+    async def ci_webhook(request: Request):
+        """Webhook GitHub Actions check_run/check_suite.
+
+        Accepte les events GitHub, vérifie éventuellement la signature HMAC
+        (si GITHUB_WEBHOOK_SECRET défini), émet un WSEvent "ci_status" pour
+        l'UI (MonitoringTab) et stocke l'info pour un futur retry réel
+        (si souhaité via /project/retry-ticket, Phase 2+).
+
+        Config côté repo : Settings → Webhooks → POST /ci-webhook, content
+        type application/json, events check_run + check_suite.
+        """
+        import hashlib
+        import hmac
+        import os
+
+        raw_body = await request.body()
+        secret = os.environ.get("GITHUB_WEBHOOK_SECRET")
+        if secret:
+            signature = request.headers.get("X-Hub-Signature-256", "")
+            expected = (
+                "sha256="
+                + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+            )
+            if not hmac.compare_digest(signature, expected):
+                return {"ok": False, "error": "invalid signature"}
+
+        try:
+            payload = json.loads(raw_body.decode() or "{}")
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "invalid json"}
+
+        event = request.headers.get("X-GitHub-Event", "unknown")
+        conclusion = (
+            payload.get("check_run", {}).get("conclusion")
+            or payload.get("check_suite", {}).get("conclusion")
+        )
+        pr_numbers = [
+            p.get("number")
+            for p in payload.get("check_run", {}).get("pull_requests", [])
+        ] or [
+            p.get("number")
+            for p in payload.get("check_suite", {}).get("pull_requests", [])
+        ]
+
+        streamer: WSStreamer = app.state.ws_streamer
+        for pr_number in pr_numbers:
+            await streamer.broadcast(
+                WSEvent(
+                    type="ci_status",
+                    data={
+                        "ticketId": f"PR-{pr_number}",
+                        "status": (
+                            "success"
+                            if conclusion == "success"
+                            else "failure"
+                            if conclusion in ("failure", "cancelled", "timed_out")
+                            else "running"
+                        ),
+                        "url": payload.get("check_run", {}).get("html_url", ""),
+                    },
+                    session_id="system",
+                )
+            )
+
+        return {
+            "ok": True,
+            "event": event,
+            "conclusion": conclusion,
+            "pr_numbers": pr_numbers,
         }
 
     @app.post("/project/start")

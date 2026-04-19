@@ -12,11 +12,13 @@ Ne pas confondre avec le retry Niveau 1 (lint, interne à agent_loop.py).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable
+from typing import Awaitable, Callable
 
 from backend.git_service import GitService
 from backend.github_service import GitHubService
@@ -93,6 +95,9 @@ class ProjectMode:
 
     # Niveau 2 — retries CI (pas les retries lint d'agent_loop).
     MAX_CI_RETRIES = 3
+    # Polling par défaut du CI GitHub Actions (secondes).
+    CI_POLL_INTERVAL = 30
+    CI_TIMEOUT = 600  # 10 minutes max par PR
 
     def __init__(
         self,
@@ -284,30 +289,51 @@ Règles :
 
         return roadmap
 
+    # ── Étape 4a : Attente CI GitHub Actions (polling) ───────────────────────
+
+    async def _wait_for_ci(
+        self,
+        pr_number: int,
+        poll_interval: float | None = None,
+        timeout: float | None = None,
+    ) -> bool:
+        """Poll GitHub pour l'état des checks de la PR.
+
+        Retourne True si tous les checks passent, False si échec ou timeout.
+        """
+        interval = poll_interval if poll_interval is not None else self.CI_POLL_INTERVAL
+        max_s = timeout if timeout is not None else self.CI_TIMEOUT
+        deadline = time.monotonic() + max_s
+
+        while True:
+            status = self.github.get_pr_check_status(pr_number)
+            if status == "success":
+                return True
+            if status == "failure":
+                return False
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(interval)
+
     # ── Étape 4 : Exécution autonome d'un ticket ─────────────────────────────
 
     async def execute_ticket(
         self,
         task: Task,
         roadmap: ProjectRoadmap,
-        agent_loop_coro: Awaitable,
+        agent_loop_factory: Callable[[], Awaitable],
     ) -> bool:
-        """
-        I11 : IMPLÉMENTATION CI NIVEAU 2 — STUB MVP.
+        """Exécute un ticket en circuit fermé avec retry CI réel (Niveau 2).
 
-        La boucle `for ci_attempt` est prête structurellement mais le retry CI
-        réel n'est pas encore implémenté (nécessite un webhook GitHub →
-        /ci-webhook). Pour l'instant, on marque la tâche `done` optimiste
-        après création de la PR ; GitHub Actions valide de son côté.
-        Le retry complet sera implémenté en Phase 2 via POST /ci-webhook.
-
-        Flux en cas de succès :
+        Flux :
             1. Sauvegarde la branche initiale (C9)
             2. Crée la branche feature/T-XXX-titre
             3. Agent loop implémente
             4. Commit + push (C10 : push direct, pas de re-split de branch_name)
             5. Crée la PR liée à l'issue GitHub
-            6. Retour à la branche initiale ; marque done optimiste
+            6. Poll CI GitHub Actions (30s par défaut, timeout 10 min)
+            7a. CI vert → close issue, mark done, return True
+            7b. CI rouge → retry (jusqu'à MAX_CI_RETRIES)
         Retourne True si succès, False après MAX_CI_RETRIES échecs.
         """
         # C9 — mémoriser la branche initiale pour tous les checkout de retour.
@@ -320,13 +346,14 @@ Règles :
 
         for ci_attempt in range(1, self.MAX_CI_RETRIES + 1):
             await self.ws.emit_step(f"TICKET_EXECUTE (CI #{ci_attempt})", task.id)
+            pr_number: int | None = None
 
             try:
                 self.git.create_branch(branch_name)
                 roadmap.update_task_status(task.id, "in_progress")
                 roadmap.lock_file(branch_name, task.assigned_to)
 
-                result = await agent_loop_coro
+                result = await agent_loop_factory()
 
                 modified = self.git.get_modified_files()
                 if modified:
@@ -341,18 +368,33 @@ Règles :
                     pr_title = f"[{task.id}] {task.title} (#{task.github_issue})"
                     content_preview = str(getattr(result, "content", result))[:500]
                     pr_body = f"Closes #{task.github_issue}\n\n{content_preview}"
-                    self.github.create_pr(
+                    pr_number = self.github.create_pr(
                         title=pr_title,
                         body=pr_body,
                         head_branch=branch_name,
                     )
 
-                # C9 — retour à la branche initiale, pas repo.heads[0].name.
+                # C9 — retour à la branche initiale avant d'attendre le CI.
                 self.git.checkout(initial_branch)
                 roadmap.unlock_file(branch_name)
 
+                # Niveau 2 — attente CI GitHub Actions (polling réel).
+                if pr_number is not None:
+                    await self.ws.emit_step(
+                        f"CI_WAIT (#{ci_attempt})", task.id
+                    )
+                    ci_ok = await self._wait_for_ci(pr_number)
+                    if not ci_ok:
+                        # CI rouge → on considère cette tentative comme échec
+                        # et on laisse la boucle for réessayer.
+                        raise RuntimeError(
+                            f"CI rouge sur PR #{pr_number} (tentative {ci_attempt})"
+                        )
+
                 roadmap.update_task_status(task.id, "done")
-                roadmap.add_done(f"[{task.id}] {task.title} — implémenté et PR créée")
+                roadmap.add_done(
+                    f"[{task.id}] {task.title} — CI vert, PR mergée"
+                )
                 return True
 
             except Exception as e:
@@ -365,7 +407,9 @@ Règles :
                             f"❌ Échec total après {self.MAX_CI_RETRIES} tentatives CI.\n"
                             f"Erreur : {str(e)[:200]}\nIntervention humaine requise.",
                         )
-                        self.github.add_label_to_issue(task.github_issue, "blocked")
+                        self.github.add_label_to_issue(
+                            task.github_issue, "blocked"
+                        )
                     return False
                 # C9 — retour à la branche initiale avant retry.
                 try:
