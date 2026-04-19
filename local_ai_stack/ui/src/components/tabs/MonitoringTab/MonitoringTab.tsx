@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLLMStore } from "../../../stores/llmStore";
 import { useSessionStore } from "../../../stores/sessionStore";
 import { ws } from "../../../ws";
+import { CI_COLOR, CI_ICON, type CIStatus as CIStatusEnum } from "../../../lib/statusMaps";
 
 interface SystemStats {
   cpuPercent: number;
@@ -10,23 +11,9 @@ interface SystemStats {
 
 interface CIStatus {
   ticketId: string;
-  status: "pending" | "running" | "success" | "failure";
+  status: CIStatusEnum;
   url: string;
 }
-
-const CI_COLORS: Record<CIStatus["status"], string> = {
-  pending: "text-muted",
-  running: "text-warning animate-pulse",
-  success: "text-success",
-  failure: "text-error",
-};
-
-const CI_ICONS: Record<CIStatus["status"], string> = {
-  pending: "⏳",
-  running: "🔄",
-  success: "✅",
-  failure: "❌",
-};
 
 export default function MonitoringTab() {
   const llms = useLLMStore((s) => s.llms);
@@ -138,8 +125,8 @@ export default function MonitoringTab() {
                 className="flex items-center gap-2 bg-border rounded px-3 py-2"
                 data-testid={`ci-${ci.ticketId}`}
               >
-                <span className={`text-xs font-medium ${CI_COLORS[ci.status]}`}>
-                  {CI_ICONS[ci.status]} {ci.ticketId}
+                <span className={`text-xs font-medium ${CI_COLOR[ci.status]}`}>
+                  {CI_ICON[ci.status]} {ci.ticketId}
                 </span>
               </div>
             ))}

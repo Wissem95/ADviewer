@@ -1,10 +1,5 @@
 import { useRoutingStore } from "../../../stores/routingStore";
-
-const MODE_COLORS: Record<string, string> = {
-  simple: "text-success",
-  medium: "text-warning",
-  multi_agent: "text-error",
-};
+import { ROUTING_MODE_COLOR } from "../../../lib/statusMaps";
 
 export function RoutingHistory() {
   const history = useRoutingStore((s) => s.history);
@@ -46,7 +41,7 @@ export function RoutingHistory() {
                   <td className="px-3 py-2 text-accent">{entry.llm.split("/").pop()}</td>
                   <td className="px-3 py-2">
                     <span
-                      className={`font-medium ${MODE_COLORS[entry.mode] ?? "text-muted"}`}
+                      className={`font-medium ${ROUTING_MODE_COLOR[entry.mode] ?? "text-muted"}`}
                     >
                       {entry.mode}
                     </span>

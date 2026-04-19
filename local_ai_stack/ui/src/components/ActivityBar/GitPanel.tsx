@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
 import { ws } from "../../ws";
+import { GIT_STATUS_COLOR, type GitFileStatus } from "../../lib/statusMaps";
 
 export interface GitFile {
   path: string;
-  status: "modified" | "added" | "deleted" | "untracked";
+  status: GitFileStatus;
 }
-
-const STATUS_COLORS: Record<GitFile["status"], string> = {
-  modified: "text-warning",
-  added: "text-success",
-  deleted: "text-error",
-  untracked: "text-muted",
-};
 
 export function GitPanel() {
   const [files, setFiles] = useState<GitFile[]>([]);
@@ -71,7 +65,7 @@ export function GitPanel() {
                 onChange={() => toggleStage(f.path)}
                 className="w-3 h-3"
               />
-              <span className={`text-[10px] truncate ${STATUS_COLORS[f.status]}`}>
+              <span className={`text-[10px] truncate ${GIT_STATUS_COLOR[f.status]}`}>
                 {f.path.split("/").pop()}
               </span>
             </label>

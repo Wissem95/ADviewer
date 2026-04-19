@@ -1,18 +1,5 @@
-import { useLLMStore, type LLMStatus as LLMStatusEnum } from "../../stores/llmStore";
-
-const STATUS_LABEL: Record<LLMStatusEnum, string> = {
-  idle: "Disponible",
-  busy: "En cours...",
-  disabled: "Désactivé",
-  error: "Erreur",
-};
-
-const STATUS_DOT: Record<LLMStatusEnum, string> = {
-  idle: "bg-success",
-  busy: "bg-warning animate-pulse",
-  disabled: "bg-muted",
-  error: "bg-error",
-};
+import { useLLMStore } from "../../stores/llmStore";
+import { LLM_STATUS_DOT, LLM_STATUS_LABEL } from "../../lib/statusMaps";
 
 export function LLMStatus() {
   const llms = useLLMStore((s) => s.llms);
@@ -30,12 +17,12 @@ export function LLMStatus() {
           data-testid={`llm-card-${llm.id}`}
         >
           <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[llm.status]}`} />
+            <span className={`w-2 h-2 rounded-full shrink-0 ${LLM_STATUS_DOT[llm.status]}`} />
             <span className="text-xs font-medium text-text truncate">{llm.name}</span>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] text-muted min-w-0">
-              {STATUS_LABEL[llm.status]}
+              {LLM_STATUS_LABEL[llm.status]}
               {llm.status === "busy" && llm.currentTask && (
                 <span className="ml-1 opacity-70 truncate block max-w-[120px]">
                   {llm.currentTask}

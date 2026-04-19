@@ -1,21 +1,5 @@
 import { useRoadmapStore } from "../../stores/roadmapStore";
-import type { RoadmapTask } from "../../stores/roadmapStore";
-
-const STATUS_COLORS: Record<RoadmapTask["status"], string> = {
-  pending: "text-muted",
-  in_progress: "text-warning",
-  done: "text-success",
-  failed: "text-error",
-  blocked: "text-accent",
-};
-
-const STATUS_ICONS: Record<RoadmapTask["status"], string> = {
-  pending: "○",
-  in_progress: "◐",
-  done: "●",
-  failed: "✕",
-  blocked: "⊘",
-};
+import { TASK_STATUS_COLOR, TASK_STATUS_ICON } from "../../lib/statusMaps";
 
 export function SprintBoard() {
   const roadmap = useRoadmapStore((s) => s.roadmap);
@@ -50,10 +34,10 @@ export function SprintBoard() {
               >
                 <div className="flex items-start gap-1.5">
                   <span
-                    className={`text-[10px] mt-0.5 ${STATUS_COLORS[task.status]}`}
+                    className={`text-[10px] mt-0.5 ${TASK_STATUS_COLOR[task.status]}`}
                     aria-label={task.status}
                   >
-                    {STATUS_ICONS[task.status]}
+                    {TASK_STATUS_ICON[task.status]}
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] text-text truncate">{task.title}</p>

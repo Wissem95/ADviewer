@@ -1,25 +1,10 @@
 import { useLLMStore } from "../../stores/llmStore";
-import { useSessionStore, type BackendStatus } from "../../stores/sessionStore";
-import type { LLMStatus } from "../../stores/llmStore";
+import { useSessionStore } from "../../stores/sessionStore";
+import { BACKEND_COLOR, BACKEND_LABEL, LLM_STATUS_DOT } from "../../lib/statusMaps";
 
-const STATUS_COLOR: Record<LLMStatus, string> = {
-  idle: "bg-success",
-  busy: "bg-warning",
-  disabled: "bg-muted",
-  error: "bg-error",
-};
-
-const BACKEND_LABEL: Record<BackendStatus, string> = {
-  ready: "Backend prêt",
-  connecting: "Connexion...",
-  error: "Backend erreur",
-};
-
-const BACKEND_COLOR: Record<BackendStatus, string> = {
-  ready: "bg-success",
-  connecting: "bg-warning",
-  error: "bg-error",
-};
+// Les pastilles LLM de la StatusBar n'ont pas besoin de l'animate-pulse du
+// mapping global ; on retire cette classe pour garder la barre sobre.
+const PULSE_CLASS = "animate-pulse";
 
 export function StatusBar() {
   const llms = useLLMStore((s) => s.llms);
@@ -44,7 +29,7 @@ export function StatusBar() {
           >
             <span
               data-testid={`status-dot-${llm.id}`}
-              className={`w-2 h-2 rounded-full ${STATUS_COLOR[llm.status]}`}
+              className={`w-2 h-2 rounded-full ${LLM_STATUS_DOT[llm.status].replace(PULSE_CLASS, "").trim()}`}
             />
             <span className="text-[10px]">{llm.name.split(" ")[0]}</span>
           </div>

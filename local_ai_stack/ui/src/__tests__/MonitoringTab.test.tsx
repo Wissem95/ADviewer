@@ -1,14 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { FakeWebSocket } from "../test/setup";
+import { setupWs } from "../test/wsSetup";
 
 async function setup() {
-  vi.resetModules();
-  FakeWebSocket.instances = [];
-  const { ws } = await import("../ws");
-  ws.connect();
+  const { ws } = await setupWs();
   const MonitoringTab = (await import("../components/tabs/MonitoringTab/MonitoringTab")).default;
-  FakeWebSocket.instances[0]._triggerOpen();
   return { ws, MonitoringTab };
 }
 

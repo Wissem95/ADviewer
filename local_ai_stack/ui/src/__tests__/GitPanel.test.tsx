@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { FakeWebSocket } from "../test/setup";
+import { setupWs } from "../test/wsSetup";
 import type { GitFile } from "../components/ActivityBar/GitPanel";
 
 const sampleFiles: GitFile[] = [
@@ -10,12 +11,8 @@ const sampleFiles: GitFile[] = [
 ];
 
 async function setup() {
-  vi.resetModules();
-  FakeWebSocket.instances = [];
-  const { ws } = await import("../ws");
-  ws.connect();
+  const { ws } = await setupWs();
   const { GitPanel } = await import("../components/ActivityBar/GitPanel");
-  FakeWebSocket.instances[0]._triggerOpen();
   return { ws, GitPanel };
 }
 
