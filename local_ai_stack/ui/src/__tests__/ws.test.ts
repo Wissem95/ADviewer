@@ -1,50 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-// Mock WebSocket global avant d'importer ws.ts (singleton).
-class FakeWebSocket {
-  static instances: FakeWebSocket[] = [];
-  static OPEN = 1;
-  static CLOSED = 3;
-
-  url: string;
-  readyState = 0; // CONNECTING
-  sent: string[] = [];
-
-  onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
-  onmessage: ((ev: { data: string }) => void) | null = null;
-  onerror: ((ev: unknown) => void) | null = null;
-
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-
-  send(data: string) {
-    this.sent.push(data);
-  }
-
-  close() {
-    this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
-  }
-
-  _triggerOpen() {
-    this.readyState = FakeWebSocket.OPEN;
-    this.onopen?.();
-  }
-
-  _triggerMessage(data: unknown) {
-    this.onmessage?.({ data: JSON.stringify(data) });
-  }
-}
-
-// @ts-expect-error override global
-globalThis.WebSocket = FakeWebSocket;
-// @ts-expect-error
-globalThis.WebSocket.OPEN = 1;
-// @ts-expect-error
-globalThis.WebSocket.CLOSED = 3;
+import { FakeWebSocket } from "../test/setup";
 
 describe("WSClient", () => {
   beforeEach(async () => {
@@ -71,7 +26,7 @@ describe("WSClient", () => {
     const handler = vi.fn();
     ws.on("routing_decision", handler);
     sock._triggerOpen();
-    sock._triggerMessage({ type: "routing_decision", data: { llm: "minimax" } });
+    sock._triggerMessage("routing_decision", { llm: "minimax" });
     expect(handler).toHaveBeenCalledWith({ llm: "minimax" });
   });
 
@@ -83,7 +38,7 @@ describe("WSClient", () => {
     const unsub = ws.on("agent_step", handler);
     unsub();
     sock._triggerOpen();
-    sock._triggerMessage({ type: "agent_step", data: { step: "PLAN" } });
+    sock._triggerMessage("agent_step", { step: "PLAN" });
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -91,7 +46,6 @@ describe("WSClient", () => {
     const { ws } = await import("../ws");
     ws.connect();
     const sock = FakeWebSocket.instances[0];
-    // Send alors que readyState = CONNECTING
     ws.send("chat", { prompt: "hello" });
     expect(sock.sent).toHaveLength(0);
     sock._triggerOpen();
@@ -135,7 +89,6 @@ describe("WSClient", () => {
     const handler = vi.fn();
     ws.on("anything", handler);
     sock._triggerOpen();
-    // Simule message non-JSON
     sock.onmessage?.({ data: "not json" });
     expect(handler).not.toHaveBeenCalled();
   });
