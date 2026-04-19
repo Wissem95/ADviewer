@@ -46,6 +46,8 @@ export default function MonitoringTab() {
           return prev.map((s, i) => (i === idx ? status : s));
         });
       }),
+      // #3 — re-request au (re)connect.
+      ws.on("health", () => ws.send("request_sys_stats", {})),
     ];
     ws.send("request_sys_stats", {});
     return () => cleanups.forEach((c) => c());

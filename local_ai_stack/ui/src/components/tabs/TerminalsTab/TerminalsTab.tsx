@@ -14,6 +14,8 @@ function LLMTerminal({ llmId, llmName }: { llmId: string; llmName: string }) {
   useEffect(() => {
     if (!ref.current) return;
     let disposed = false;
+    // #1 — buffer les lignes reçues pendant l'async import (sinon silencieusement droppées).
+    const pendingLines: string[] = [];
 
     (async () => {
       const { Terminal } = await import("@xterm/xterm");
@@ -32,12 +34,18 @@ function LLMTerminal({ llmId, llmName }: { llmId: string; llmName: string }) {
       fitAddon.fit();
       termRef.current = term;
       term.writeln(`\x1b[36m[${llmName}]\x1b[0m Terminal prêt.`);
+      // Flush des lignes bufferisées dans l'ordre d'arrivée.
+      for (const line of pendingLines) term.writeln(line);
+      pendingLines.length = 0;
     })();
 
     const cleanupHandler = ws.on("agent_log", (data) => {
       const { llm, line } = data as { llm: string; line: string };
-      if (llm === llmId && termRef.current) {
+      if (llm !== llmId) return;
+      if (termRef.current) {
         termRef.current.writeln(line);
+      } else {
+        pendingLines.push(line);
       }
     });
 

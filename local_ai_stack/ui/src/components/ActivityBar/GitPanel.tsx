@@ -19,11 +19,13 @@ export function GitPanel() {
   const [staged, setStaged] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const cleanup = ws.on("git_diff_files", (data) => {
-      setFiles(data as GitFile[]);
-    });
+    const cleanups = [
+      ws.on("git_diff_files", (data) => setFiles(data as GitFile[])),
+      // #3 — re-request au (re)connect pour rafraîchir après coupure WS.
+      ws.on("health", () => ws.send("request_git_diff", {})),
+    ];
     ws.send("request_git_diff", {});
-    return cleanup;
+    return () => cleanups.forEach((c) => c());
   }, []);
 
   function toggleStage(path: string) {

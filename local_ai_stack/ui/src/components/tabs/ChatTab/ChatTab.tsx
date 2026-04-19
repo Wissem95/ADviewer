@@ -20,7 +20,11 @@ function newId(): string {
 
 export default function ChatTab() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // #2 — pendingCount au lieu de boolean : support 2+ prompts concurrents.
+  // Chaque send incrémente ; chaque chat_response décrémente. Loader visible
+  // tant que > 0. Évite d'éteindre le loader à la 1re réponse si une 2e est pending.
+  const [pendingCount, setPendingCount] = useState(0);
+  const isLoading = pendingCount > 0;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export default function ChatTab() {
           timestamp: Date.now(),
         },
       ]);
-      setIsLoading(false);
+      setPendingCount((n) => Math.max(0, n - 1));
     });
     return cleanup;
   }, []);
@@ -53,7 +57,7 @@ export default function ChatTab() {
       ...prev,
       { id: newId(), role: "user", content: prompt, timestamp: Date.now() },
     ]);
-    setIsLoading(true);
+    setPendingCount((n) => n + 1);
     ws.send("chat", { prompt, mention });
   }
 
@@ -87,7 +91,8 @@ export default function ChatTab() {
         <div ref={bottomRef} />
       </div>
 
-      <ChatInput onSend={handleSend} disabled={isLoading} />
+      {/* ChatInput non disabled pendant pending : on autorise 2+ prompts concurrents. */}
+      <ChatInput onSend={handleSend} />
     </div>
   );
 }

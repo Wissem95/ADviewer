@@ -13,11 +13,13 @@ export function FileTree() {
   const [tree, setTree] = useState<FileNode[]>([]);
 
   useEffect(() => {
-    const cleanup = ws.on("file_tree", (data) => {
-      setTree(data as FileNode[]);
-    });
+    const cleanups = [
+      ws.on("file_tree", (data) => setTree(data as FileNode[])),
+      // #3 — re-request au (re)connect.
+      ws.on("health", () => ws.send("request_file_tree", {})),
+    ];
     ws.send("request_file_tree", {});
-    return cleanup;
+    return () => cleanups.forEach((c) => c());
   }, []);
 
   function renderNode(node: FileNode, depth: number): React.ReactNode {

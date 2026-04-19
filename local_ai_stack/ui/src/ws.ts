@@ -55,7 +55,11 @@ class WSClient {
 
     this.socket.onerror = (err) => {
       console.error("[WS] Error:", err);
-      this.dispatch("error", err);
+      // #4 — payload sérialisable (un Event DOM JSON.stringify à "{}")
+      const message =
+        (err as unknown as { message?: string })?.message ??
+        (err instanceof Event ? `WebSocket ${err.type}` : String(err));
+      this.dispatch("error", { message });
     };
   }
 

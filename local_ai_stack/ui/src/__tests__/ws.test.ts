@@ -136,6 +136,21 @@ describe("WSClient", () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  it("#4 — dispatches 'error' with a serializable {message} payload, not a DOM Event", async () => {
+    const { ws } = await import("../ws");
+    const onError = vi.fn();
+    ws.on("error", onError);
+    ws.connect();
+    FakeWebSocket.instances[0].onerror?.(new Event("error"));
+    const payload = onError.mock.calls[0][0];
+    // Pas un Event DOM (qui JSON.stringify en "{}")
+    expect(payload).not.toBeInstanceOf(Event);
+    expect(typeof payload).toBe("object");
+    expect(payload).toHaveProperty("message");
+    expect(typeof payload.message).toBe("string");
+    expect(payload.message.length).toBeGreaterThan(0);
+  });
+
   it("ignores non-JSON messages silently", async () => {
     const { ws } = await import("../ws");
     ws.connect();

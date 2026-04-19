@@ -58,6 +58,43 @@ describe("ChatTab", () => {
     expect(screen.getByText(/0\.8s · 42 tokens/)).toBeInTheDocument();
   });
 
+  it("#2 — 2 prompts concurrents : loader reste tant que les 2 responses ne sont pas arrivées", async () => {
+    const { ChatTab } = await setup();
+    render(<ChatTab />);
+    const sock = FakeWebSocket.instances[0];
+
+    // 1er envoi
+    fireEvent.change(screen.getByLabelText("Chat prompt"), { target: { value: "p1" } });
+    fireEvent.click(screen.getByLabelText("Send"));
+    expect(screen.getByTestId("loading")).toBeInTheDocument();
+
+    // 2e envoi (l'input reste enabled avec pendingCount)
+    fireEvent.change(screen.getByLabelText("Chat prompt"), { target: { value: "p2" } });
+    fireEvent.click(screen.getByLabelText("Send"));
+    const sent = sock.sent.map((s) => JSON.parse(s)).filter((m) => m.type === "chat");
+    expect(sent).toHaveLength(2);
+
+    // 1re réponse → pendingCount passe de 2 à 1, loader toujours visible
+    act(() =>
+      sock._triggerMessage("chat_response", {
+        content: "r1",
+        llm: "minimax/minimax-m2.5",
+        llmName: "MiniMax",
+      }),
+    );
+    expect(screen.getByTestId("loading")).toBeInTheDocument();
+
+    // 2e réponse → pendingCount 1→0, loader disparait
+    act(() =>
+      sock._triggerMessage("chat_response", {
+        content: "r2",
+        llm: "minimax/minimax-m2.5",
+        llmName: "MiniMax",
+      }),
+    );
+    expect(screen.queryByTestId("loading")).toBeNull();
+  });
+
   it("mention active transmet le LLM choisi dans le payload", async () => {
     const { ChatTab } = await setup();
     render(<ChatTab />);

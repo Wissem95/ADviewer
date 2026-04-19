@@ -77,6 +77,21 @@ describe("GitPanel", () => {
     expect(screen.getByText(/Commit \(0\)/)).toBeInTheDocument();
   });
 
+  it("#3 — re-demande la diff git après une reconnexion (event health rejoué)", async () => {
+    const { GitPanel } = await setup();
+    render(<GitPanel />);
+    const sock = FakeWebSocket.instances[0];
+
+    const countRequests = () =>
+      sock.sent.map((s) => JSON.parse(s)).filter((m) => m.type === "request_git_diff").length;
+
+    expect(countRequests()).toBe(1);
+
+    // Simule une reconnexion : nouvel event "health" (dispatché dans onopen)
+    act(() => sock._triggerOpen());
+    expect(countRequests()).toBe(2);
+  });
+
   it("affiche 'Aucun changement' si la liste est vide", async () => {
     const { GitPanel } = await setup();
     render(<GitPanel />);
