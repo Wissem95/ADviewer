@@ -7,6 +7,14 @@ describe("llmStore", () => {
     vi.resetModules();
   });
 
+  it("#12 — DEFAULT_LLMS est exporté et correspond à l'état initial", async () => {
+    const { DEFAULT_LLMS, useLLMStore } = await import("../stores/llmStore");
+    expect(DEFAULT_LLMS).toHaveLength(5);
+    expect(useLLMStore.getState().llms.map((l) => l.id)).toEqual(
+      DEFAULT_LLMS.map((l) => l.id),
+    );
+  });
+
   it("initialise 5 LLMs par défaut avec status idle", async () => {
     const { useLLMStore } = await import("../stores/llmStore");
     const llms = useLLMStore.getState().llms;

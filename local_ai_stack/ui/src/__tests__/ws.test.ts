@@ -93,6 +93,49 @@ describe("WSClient", () => {
     expect(onDisconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("re-fires 'health' on second OPEN after reconnect", async () => {
+    const { ws } = await import("../ws");
+    const onHealth = vi.fn();
+    ws.on("health", onHealth);
+    ws.connect();
+    const first = FakeWebSocket.instances[0];
+    first._triggerOpen();
+    first.close();
+    vi.advanceTimersByTime(2000);
+    const second = FakeWebSocket.instances[1];
+    second._triggerOpen();
+    expect(onHealth).toHaveBeenCalledTimes(2);
+  });
+
+  it("#5 — caps pendingMessages at 100 with drop-head", async () => {
+    const { ws, MAX_PENDING_MESSAGES } = await import("../ws");
+    expect(MAX_PENDING_MESSAGES).toBe(100);
+    ws.connect();
+    const sock = FakeWebSocket.instances[0];
+    for (let i = 0; i < MAX_PENDING_MESSAGES + 5; i++) {
+      ws.send("msg", { i });
+    }
+    sock._triggerOpen();
+    // Les 5 premiers ont été droppés ; on doit recevoir de i=5 à i=104.
+    expect(sock.sent).toHaveLength(MAX_PENDING_MESSAGES);
+    expect(JSON.parse(sock.sent[0])).toEqual({ type: "msg", data: { i: 5 } });
+    expect(JSON.parse(sock.sent[sock.sent.length - 1])).toEqual({
+      type: "msg",
+      data: { i: MAX_PENDING_MESSAGES + 4 },
+    });
+  });
+
+  it("#15 — dispatches 'error' event on onerror", async () => {
+    const { ws } = await import("../ws");
+    const onError = vi.fn();
+    ws.on("error", onError);
+    ws.connect();
+    const sock = FakeWebSocket.instances[0];
+    const errEvent = new Event("error");
+    sock.onerror?.(errEvent);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores non-JSON messages silently", async () => {
     const { ws } = await import("../ws");
     ws.connect();

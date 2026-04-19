@@ -64,6 +64,17 @@ describe("sessionStore", () => {
     cleanup();
   });
 
+  it("connectSessionStore : event 'error' bascule backendStatus à 'error'", async () => {
+    const { ws } = await import("../ws");
+    const { useSessionStore, connectSessionStore } = await import("../stores/sessionStore");
+    const cleanup = connectSessionStore();
+    ws.connect();
+    const sock = FakeWebSocket.instances[0];
+    sock.onerror?.(new Event("error"));
+    expect(useSessionStore.getState().backendStatus).toBe("error");
+    cleanup();
+  });
+
   it("connectSessionStore : git_status + token_usage", async () => {
     const { ws } = await import("../ws");
     const { useSessionStore, connectSessionStore } = await import("../stores/sessionStore");

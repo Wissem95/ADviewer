@@ -1,7 +1,8 @@
 // Singleton WebSocket — une seule connexion partagée.
 // Reconnexion auto 2s. Handlers par type de message.
-// C16 : buffer pendingMessages envoyés avant OPEN.
-// I7 : émet l'event local "health" dans onopen (pas besoin que le backend l'envoie).
+// C16 : buffer pendingMessages envoyés avant OPEN (plafonné).
+// I7 : émet l'event local "health" dans onopen.
+// Émet aussi "disconnect" sur close et "error" sur erreur réseau.
 
 type WSHandler = (data: unknown) => void;
 
@@ -9,6 +10,8 @@ interface PendingMessage {
   type: string;
   data: unknown;
 }
+
+export const MAX_PENDING_MESSAGES = 100;
 
 class WSClient {
   private socket: WebSocket | null = null;
@@ -28,9 +31,7 @@ class WSClient {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
       }
-      // I7 — émettre l'event health local aux handlers
       this.dispatch("health", {});
-      // C16 — flush la queue
       while (this.pendingMessages.length > 0) {
         const msg = this.pendingMessages.shift()!;
         this.socket!.send(JSON.stringify(msg));
@@ -48,13 +49,13 @@ class WSClient {
 
     this.socket.onclose = () => {
       console.log("[WS] Disconnected — retrying in 2s");
-      // Notifier les listeners avant de planifier la reconnexion.
       this.dispatch("disconnect", {});
       this.reconnectTimer = setTimeout(() => this.connect(), 2000);
     };
 
     this.socket.onerror = (err) => {
       console.error("[WS] Error:", err);
+      this.dispatch("error", err);
     };
   }
 
@@ -73,10 +74,15 @@ class WSClient {
   send(type: string, data: unknown): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ type, data }));
-    } else {
-      // C16 — buffer en attente de OPEN
-      this.pendingMessages.push({ type, data });
+      return;
     }
+    // C16 — buffer borné avec drop-head pour éviter la fuite mémoire
+    // si le backend ne démarre jamais.
+    if (this.pendingMessages.length >= MAX_PENDING_MESSAGES) {
+      const dropped = this.pendingMessages.shift();
+      console.warn("[WS] pendingMessages full, dropping oldest:", dropped?.type);
+    }
+    this.pendingMessages.push({ type, data });
   }
 
   disconnect(): void {

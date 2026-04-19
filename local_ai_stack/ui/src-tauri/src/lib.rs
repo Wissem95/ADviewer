@@ -1,5 +1,5 @@
 // Shell Tauri — spawne FastAPI en subprocess puis ouvre la fenêtre.
-// SIGTERM envoyé au backend à la fermeture.
+// Shutdown : SIGTERM (avec fallback SIGKILL si le process ne termine pas) + wait().
 
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ fn spawn_backend() -> Option<Child> {
         "../venv/bin/python"
     };
 
-    Command::new(venv_python)
+    match Command::new(venv_python)
         .args([
             "-m",
             "uvicorn",
@@ -38,7 +38,38 @@ fn spawn_backend() -> Option<Child> {
         ])
         .current_dir("..")
         .spawn()
-        .ok()
+    {
+        Ok(child) => Some(child),
+        Err(e) => {
+            eprintln!(
+                "[Tauri] Échec spawn backend ({venv_python}) : {e}. Vérifiez que venv/ existe et contient uvicorn."
+            );
+            None
+        }
+    }
+}
+
+/// Demande l'arrêt gracieux du process enfant.
+/// Unix : SIGTERM, attend 2s, fallback SIGKILL si toujours vivant. Reap via wait().
+/// Windows : Child::kill() (pas d'équivalent SIGTERM natif).
+fn shutdown_child(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+        for _ in 0..20 {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => thread::sleep(Duration::from_millis(100)),
+                Err(_) => break,
+            }
+        }
+    }
+    // Soit on est sur Windows, soit SIGTERM n'a pas abouti → SIGKILL + reap.
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -68,7 +99,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let mut guard = backend_clone.lock().unwrap();
                 if let Some(child) = guard.as_mut() {
-                    let _ = child.kill();
+                    shutdown_child(child);
                 }
             }
         })

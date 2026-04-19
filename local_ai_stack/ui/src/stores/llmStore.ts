@@ -22,7 +22,7 @@ interface LLMStore {
   updateLatency: (id: string, latencyMs: number) => void;
 }
 
-const DEFAULT_LLMS: LLMInfo[] = [
+export const DEFAULT_LLMS: LLMInfo[] = [
   { id: "minimax/minimax-m2.5", name: "MiniMax M2.5", role: "coding", status: "idle", currentTask: null, tokensToday: 0, latencyMs: 0 },
   { id: "gemini/gemini-2.5-pro", name: "Gemini Pro", role: "analysis", status: "idle", currentTask: null, tokensToday: 0, latencyMs: 0 },
   { id: "gemini/gemini-2.5-flash", name: "Gemini Flash", role: "routing", status: "idle", currentTask: null, tokensToday: 0, latencyMs: 0 },
