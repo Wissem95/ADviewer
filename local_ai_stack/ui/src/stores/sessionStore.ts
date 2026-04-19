@@ -36,6 +36,9 @@ export function connectSessionStore(): () => void {
     ws.on("health", () => {
       useSessionStore.getState().setBackendStatus("ready");
     }),
+    ws.on("disconnect", () => {
+      useSessionStore.getState().setBackendStatus("connecting");
+    }),
     ws.on("git_status", (data) => {
       const { branch, modifiedFiles } = data as { branch: string; modifiedFiles: number };
       useSessionStore.getState().setBranch(branch, modifiedFiles);

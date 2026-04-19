@@ -82,6 +82,17 @@ describe("WSClient", () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
 
+  it("fires 'disconnect' handlers on close (before reconnect)", async () => {
+    const { ws } = await import("../ws");
+    const onDisconnect = vi.fn();
+    ws.on("disconnect", onDisconnect);
+    ws.connect();
+    const sock = FakeWebSocket.instances[0];
+    sock._triggerOpen();
+    sock.close();
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores non-JSON messages silently", async () => {
     const { ws } = await import("../ws");
     ws.connect();

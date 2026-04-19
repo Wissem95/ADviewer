@@ -51,6 +51,19 @@ describe("sessionStore", () => {
     cleanup();
   });
 
+  it("connectSessionStore : bascule à 'connecting' quand la WS se ferme", async () => {
+    const { ws } = await import("../ws");
+    const { useSessionStore, connectSessionStore } = await import("../stores/sessionStore");
+    const cleanup = connectSessionStore();
+    ws.connect();
+    const sock = FakeWebSocket.instances[0];
+    sock._triggerOpen();
+    expect(useSessionStore.getState().backendStatus).toBe("ready");
+    sock.close();
+    expect(useSessionStore.getState().backendStatus).toBe("connecting");
+    cleanup();
+  });
+
   it("connectSessionStore : git_status + token_usage", async () => {
     const { ws } = await import("../ws");
     const { useSessionStore, connectSessionStore } = await import("../stores/sessionStore");

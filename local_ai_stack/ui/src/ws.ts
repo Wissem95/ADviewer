@@ -48,6 +48,8 @@ class WSClient {
 
     this.socket.onclose = () => {
       console.log("[WS] Disconnected — retrying in 2s");
+      // Notifier les listeners avant de planifier la reconnexion.
+      this.dispatch("disconnect", {});
       this.reconnectTimer = setTimeout(() => this.connect(), 2000);
     };
 
