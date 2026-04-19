@@ -42,14 +42,22 @@ export function LLMStatus() {
                 </span>
               )}
             </span>
-            {llm.status !== "busy" && (
+            {llm.status === "error" ? (
+              <button
+                onClick={() => useLLMStore.getState().setStatus(llm.id, "idle")}
+                className="text-[9px] px-1.5 py-0.5 rounded bg-error text-bg font-medium shrink-0"
+                title="Remettre le LLM en idle"
+              >
+                Reset
+              </button>
+            ) : llm.status !== "busy" ? (
               <button
                 onClick={() => setDisabled(llm.id, llm.status !== "disabled")}
                 className="text-[9px] px-1.5 py-0.5 rounded bg-border text-muted hover:text-text shrink-0"
               >
                 {llm.status === "disabled" ? "Activer" : "Désact."}
               </button>
-            )}
+            ) : null}
           </div>
           <div className="mt-1 text-[10px] text-muted">
             {llm.tokensToday.toLocaleString()} tokens · {llm.latencyMs}ms

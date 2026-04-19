@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { RoutingLive } from "../components/tabs/RoutingTab/RoutingLive";
 import { useRoutingStore } from "../stores/routingStore";
@@ -31,6 +31,21 @@ describe("RoutingLive", () => {
     });
     render(<RoutingLive />);
     expect(screen.getByText("gemini-2.5-pro")).toBeInTheDocument();
+  });
+
+  it("step inconnue : console.warn + tous les steps en pending", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    useRoutingStore.setState({
+      live: { prompt: "p", llm: "minimax/minimax-m2.5", step: "UNKNOWN_STEP", attempt: 1 },
+    });
+    render(<RoutingLive />);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("step inconnue"),
+      "UNKNOWN_STEP",
+    );
+    expect(screen.getByTestId("step-PLAN").dataset.state).toBe("pending");
+    expect(screen.getByTestId("step-CONFIRM").dataset.state).toBe("pending");
+    warnSpy.mockRestore();
   });
 
   it("indique la tentative quand attempt > 1", () => {

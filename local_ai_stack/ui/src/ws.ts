@@ -21,7 +21,11 @@ class WSClient {
   readonly url = "ws://127.0.0.1:8765/ws";
 
   connect(): void {
+    // Guard : déjà OPEN ou CONNECTING → pas de nouvelle socket.
+    // Évite aussi que React.StrictMode en dev crée 2 sockets (mount/unmount/mount).
+    const CONNECTING = 0;
     if (this.socket?.readyState === WebSocket.OPEN) return;
+    if (this.socket?.readyState === CONNECTING) return;
 
     this.socket = new WebSocket(this.url);
 

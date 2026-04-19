@@ -12,6 +12,14 @@ describe("WSClient", () => {
     vi.useRealTimers();
   });
 
+  it("connect() n'ouvre pas une 2e socket si déjà CONNECTING (StrictMode safe)", async () => {
+    const { ws } = await import("../ws");
+    ws.connect();
+    ws.connect();
+    ws.connect();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
   it("connects to ws://127.0.0.1:8765/ws", async () => {
     const { ws } = await import("../ws");
     ws.connect();

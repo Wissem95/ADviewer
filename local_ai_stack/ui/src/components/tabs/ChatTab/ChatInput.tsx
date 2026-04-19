@@ -24,7 +24,10 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     setActiveMention(null);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Bloque l'envoi pendant composition IME (japonais/coréen/chinois) :
+    // `Enter` valide la composition plutôt qu'envoyer le message.
+    if ((e.nativeEvent as KeyboardEvent).isComposing) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();

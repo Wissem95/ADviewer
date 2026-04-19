@@ -41,6 +41,18 @@ describe("LLMStatus", () => {
     );
   });
 
+  it("status error : affiche un bouton Reset qui remet en idle", () => {
+    useLLMStore.getState().setStatus("minimax/minimax-m2.5", "error");
+    render(<LLMStatus />);
+    const card = screen.getByTestId("llm-card-minimax/minimax-m2.5");
+    const btn = card.querySelector("button")!;
+    expect(btn.textContent).toBe("Reset");
+    fireEvent.click(btn);
+    expect(
+      useLLMStore.getState().llms.find((l) => l.id === "minimax/minimax-m2.5")?.status,
+    ).toBe("idle");
+  });
+
   it("affiche tokens et latency formatés", () => {
     useLLMStore.getState().updateTokens("deepseek/deepseek-r1", 1250);
     useLLMStore.getState().updateLatency("deepseek/deepseek-r1", 423);

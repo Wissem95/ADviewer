@@ -22,6 +22,11 @@ export function RoutingLive() {
   }
 
   const activeIdx = STEPS.indexOf(live.step as (typeof STEPS)[number]);
+  if (activeIdx === -1) {
+    // Step envoyée par le backend qu'on ne connaît pas — surface en dev
+    // pour détecter les divergences de protocole.
+    console.warn("[RoutingLive] step inconnue reçue du backend :", live.step);
+  }
 
   return (
     <div className="rounded-lg bg-panel border border-border p-4" data-testid="routing-live">

@@ -48,6 +48,16 @@ describe("MonitoringTab", () => {
     expect(rows[0].textContent).toContain("✅");
   });
 
+  it("sys_stats payload corrompu : valeurs défensives 0", async () => {
+    const { MonitoringTab } = await setup();
+    render(<MonitoringTab />);
+    const sock = FakeWebSocket.instances[0];
+    // Payload partiel : cpuPercent null, ramMB manquant
+    act(() => sock._triggerMessage("sys_stats", { cpuPercent: null, ramMB: undefined }));
+    expect(screen.getByTestId("cpu").textContent).toBe("0.0%");
+    expect(screen.getByTestId("ram").textContent).toBe("0 MB");
+  });
+
   it("empty state CI par défaut", async () => {
     const { MonitoringTab } = await setup();
     render(<MonitoringTab />);

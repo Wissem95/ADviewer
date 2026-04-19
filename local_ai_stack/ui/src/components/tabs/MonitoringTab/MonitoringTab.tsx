@@ -37,7 +37,14 @@ export default function MonitoringTab() {
 
   useEffect(() => {
     const cleanups = [
-      ws.on("sys_stats", (data) => setSysStats(data as SystemStats)),
+      ws.on("sys_stats", (data) => {
+        // Validation défensive : payload backend peut être partiel/corrompu.
+        const d = (data ?? {}) as Partial<SystemStats>;
+        setSysStats({
+          cpuPercent: typeof d.cpuPercent === "number" && !Number.isNaN(d.cpuPercent) ? d.cpuPercent : 0,
+          ramMB: typeof d.ramMB === "number" && !Number.isNaN(d.ramMB) ? d.ramMB : 0,
+        });
+      }),
       ws.on("ci_status", (data) => {
         const status = data as CIStatus;
         setCIStatuses((prev) => {

@@ -46,6 +46,19 @@ describe("ChatInput", () => {
     expect(mentionBtn.getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("IME composition : Enter pendant composition ne déclenche PAS onSend", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+    const ta = screen.getByLabelText("Chat prompt");
+    fireEvent.change(ta, { target: { value: "こんにちは" } });
+    // Emule : touche Enter avec isComposing=true (IME en cours)
+    fireEvent.keyDown(ta, { key: "Enter", isComposing: true });
+    expect(onSend).not.toHaveBeenCalled();
+    // Touche Enter sans composition → envoie
+    fireEvent.keyDown(ta, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("こんにちは", null);
+  });
+
   it("disabled bloque onSend même si textarea a du contenu", () => {
     const onSend = vi.fn();
     render(<ChatInput onSend={onSend} disabled />);
