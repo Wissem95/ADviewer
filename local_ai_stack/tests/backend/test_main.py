@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -166,3 +168,70 @@ def test_websocket_chat_handler(tmp_path):
                 assert chat_response["data"]["content"] == "Voici la réponse"
                 assert chat_response["data"]["tokens"] == 42
                 assert "minimax" in chat_response["data"]["llm"]
+
+
+@pytest.mark.asyncio
+async def test_project_start_endpoint_wires_orchestrator(app):
+    """POST /project/start appelle orch.run_project_mode et renvoie la roadmap."""
+    from backend.roadmap import ProjectRoadmap, Task
+
+    async with app.router.lifespan_context(app):
+        mock_roadmap = ProjectRoadmap(project="demo")
+        mock_roadmap.tasks.append(
+            Task(
+                id="T-001",
+                title="Login",
+                status="pending",
+                assigned_to="",
+                sprint="Sprint 1",
+                github_issue=42,
+            )
+        )
+        app.state.orchestrator.run_project_mode = AsyncMock(return_value=mock_roadmap)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/project/start",
+                json={
+                    "description": "app todo",
+                    "github_token": "gh-token",
+                    "repo_name": "u/r",
+                },
+            )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["project"] == "demo"
+    assert data["tasks_count"] == 1
+    assert data["tasks"][0]["github_issue"] == 42
+
+
+@pytest.mark.asyncio
+async def test_broadcast_sys_stats_emits_cpu_ram():
+    """_broadcast_sys_stats émet un event sys_stats puis est annulé proprement."""
+    from backend.main import _broadcast_sys_stats
+    from backend.ws_streamer import WSStreamer
+
+    streamer = MagicMock(spec=WSStreamer)
+    streamer.broadcast = AsyncMock()
+
+    call_count = {"n": 0}
+
+    async def fake_sleep(_seconds):
+        call_count["n"] += 1
+        if call_count["n"] >= 2:
+            # Laisse 1 itération complète, puis annule à la 2e sleep.
+            raise asyncio.CancelledError()
+
+    with patch("backend.main.asyncio.sleep", side_effect=fake_sleep):
+        task = asyncio.create_task(_broadcast_sys_stats(streamer))
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    assert streamer.broadcast.await_count >= 1
+    event = streamer.broadcast.await_args_list[0][0][0]
+    assert event.type == "sys_stats"
+    assert "cpuPercent" in event.data
+    assert "ramMB" in event.data

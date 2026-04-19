@@ -3,9 +3,11 @@
 Démarre via uvicorn (mode dev) ou comme subprocess de Tauri (mode prod).
 Exposition sur 127.0.0.1:8765 uniquement (sécurité locale).
 """
+import asyncio
 import json
 from contextlib import asynccontextmanager
 
+import psutil
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from backend.models import LLMRole, LLMConfig, RoutingDecision, WSEvent
@@ -30,6 +32,25 @@ DEFAULT_LLMS = [
 
 
 # ── Factory ──────────────────────────────────────────────────────────────────
+
+async def _broadcast_sys_stats(ws_streamer: WSStreamer) -> None:
+    """Émet les stats système toutes les 5s en broadcast WebSocket."""
+    while True:
+        try:
+            await asyncio.sleep(5)
+            stats = {
+                "cpuPercent": psutil.cpu_percent(interval=None),
+                "ramMB": int(psutil.virtual_memory().used / 1024 / 1024),
+            }
+            await ws_streamer.broadcast(
+                WSEvent(type="sys_stats", data=stats, session_id="system")
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Ne pas crasher le background task sur erreur psutil transitoire.
+            pass
+
 
 def create_app(db_path: str = "localcoder.db") -> FastAPI:
     """Factory pattern pour créer l'app FastAPI.
@@ -59,8 +80,19 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
         # Forcer les mêmes instances de mémoire (pour cohérence)
         app.state.orchestrator.long_memory = long_memory
 
+        # Background task : broadcast CPU/RAM toutes les 5s (Plan 4 Task 6).
+        sys_task = asyncio.create_task(
+            _broadcast_sys_stats(app.state.ws_streamer)
+        )
+
         yield
-        # Shutdown — rien à faire (SQLite se ferme proprement)
+
+        # Shutdown : annule le broadcast_sys_stats proprement.
+        sys_task.cancel()
+        try:
+            await sys_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
     app = FastAPI(
         title="LocalCoder IDE Backend",
@@ -125,6 +157,35 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
             "duration_ms": int(response.duration * 1000),
             "tokens": response.tokens,
             "reason": response.routing_reason,
+        }
+
+    @app.post("/project/start")
+    async def project_start(request: dict):
+        """Démarre le Mode Projet complet (CdC + Sprints + GitHub).
+
+        Body: {description, github_token, repo_name}
+        Retourne la roadmap générée.
+        """
+        orch: Orchestrator = app.state.orchestrator
+        roadmap = await orch.run_project_mode(
+            description=request["description"],
+            github_token=request["github_token"],
+            repo_name=request["repo_name"],
+        )
+        return {
+            "project": roadmap.project,
+            "session_id": roadmap.session_id,
+            "tasks_count": len(roadmap.tasks),
+            "tasks": [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "status": t.status,
+                    "sprint": t.sprint,
+                    "github_issue": t.github_issue,
+                }
+                for t in roadmap.tasks
+            ],
         }
 
     @app.get("/project/status")

@@ -155,3 +155,48 @@ class Orchestrator:
     async def clear_roadmap(self) -> None:
         """Désactive le mode projet (retour au mode conversation)."""
         self.roadmap = None
+
+    async def run_project_mode(
+        self,
+        description: str,
+        github_token: str,
+        repo_name: str,
+    ) -> ProjectRoadmap:
+        """Lance le Mode Projet : CdC + Sprints + structure GitHub.
+
+        Retourne la ProjectRoadmap activée. L'exécution des tickets (Étape 4)
+        est lancée séparément via pm.execute_ticket() sur chaque task.
+        """
+        from backend.git_service import GitService
+        from backend.github_service import GitHubService
+        from backend.project_mode import ProjectMode
+
+        github_svc = GitHubService(token=github_token, repo_name=repo_name)
+        git_svc = GitService()
+        pm = ProjectMode(
+            llm_manager=self.llm,
+            ws_streamer=self.ws,
+            github_service=github_svc,
+            git_service=git_svc,
+        )
+
+        await self.ws.emit_step("MODE_PROJET_CdC", "orchestrator")
+        cdc = await pm.generate_cdc(description)
+
+        await self.ws.emit_step("MODE_PROJET_SPRINTS", "orchestrator")
+        sprints = await pm.generate_sprints(cdc)
+
+        await self.ws.emit_step("MODE_PROJET_GITHUB", "orchestrator")
+        roadmap = await pm.create_github_structure(cdc, sprints)
+
+        await self.set_roadmap(roadmap)
+
+        default_mem = self._get_short_memory("default")
+        await self.long_memory.save_decision(
+            session_id=default_mem.session_id,
+            llm="orchestrator",
+            dtype="project_mode",
+            content=f"Mode Projet lancé : {cdc.project_name}",
+            rationale=description[:200],
+        )
+        return roadmap
