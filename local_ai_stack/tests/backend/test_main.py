@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 import pytest_asyncio
@@ -207,8 +208,10 @@ async def test_project_start_endpoint_wires_orchestrator(app):
 
 
 @pytest.mark.asyncio
-async def test_ci_webhook_emits_ci_status_success(app):
+async def test_ci_webhook_emits_ci_status_success(app, monkeypatch):
     """POST /ci-webhook avec conclusion=success broadcast un WSEvent ci_status."""
+    # #CRIT4 : pas de secret → il faut l'override explicite en dev local.
+    monkeypatch.setenv("LOCALCODER_ALLOW_UNSIGNED_WEBHOOK", "1")
     async with app.router.lifespan_context(app):
         broadcasts: list = []
 
@@ -240,8 +243,8 @@ async def test_ci_webhook_emits_ci_status_success(app):
 
 
 @pytest.mark.asyncio
-async def test_ci_webhook_rejects_bad_signature(app, monkeypatch):
-    """Si GITHUB_WEBHOOK_SECRET défini, signature invalide → ok:false."""
+async def test_ci_webhook_rejects_bad_signature_returns_401(app, monkeypatch):
+    """#CRIT3 : signature invalide → 401 (non-2xx pour que GitHub remonte l'erreur)."""
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "s3cr3t")
     async with app.router.lifespan_context(app):
         transport = ASGITransport(app=app)
@@ -254,7 +257,54 @@ async def test_ci_webhook_rejects_bad_signature(app, monkeypatch):
                 },
                 json={"check_run": {"conclusion": "success", "pull_requests": []}},
             )
-    assert resp.json() == {"ok": False, "error": "invalid signature"}
+    assert resp.status_code == 401
+    assert resp.json()["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_ci_webhook_refuses_unsigned_by_default(app, monkeypatch):
+    """#CRIT4 fail-secure : sans secret ni override, on refuse avec 401."""
+    monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("LOCALCODER_ALLOW_UNSIGNED_WEBHOOK", raising=False)
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/ci-webhook",
+                headers={"X-GitHub-Event": "check_run"},
+                json={"check_run": {"conclusion": "success", "pull_requests": []}},
+            )
+    assert resp.status_code == 401
+    assert "webhook unsigned" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_ci_webhook_valid_signature_accepted(app, monkeypatch):
+    """#CRIT3 miroir : signature correcte → 200."""
+    import hashlib
+    import hmac as hmac_mod
+
+    secret = "topsecret"
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
+
+    async with app.router.lifespan_context(app):
+        app.state.ws_streamer.broadcast = AsyncMock()
+        payload = {"check_run": {"conclusion": "success", "pull_requests": [{"number": 1}]}}
+        body = json.dumps(payload).encode()
+        sig = "sha256=" + hmac_mod.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/ci-webhook",
+                headers={
+                    "X-GitHub-Event": "check_run",
+                    "X-Hub-Signature-256": sig,
+                    "Content-Type": "application/json",
+                },
+                content=body,
+            )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
 
 @pytest.mark.asyncio

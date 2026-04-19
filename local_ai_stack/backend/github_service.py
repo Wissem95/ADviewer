@@ -14,6 +14,7 @@ from typing import Optional
 
 from github import Github, GithubException
 
+from backend.project_slug import slugify_task_branch
 from backend.roadmap import Task
 
 
@@ -58,10 +59,7 @@ class GitHubService:
             "\n".join(f"- `{t}`" for t in task.tests_required)
             or "- Aucun test spécifié"
         )
-        branch_name = (
-            f"feature/{task.id.lower()}-"
-            f"{task.title.lower().replace(' ', '-')[:30]}"
-        )
+        branch_name = slugify_task_branch(task.id, task.title)
         blocked = ", ".join(task.blocked_by) or "Aucune"
 
         body = (
@@ -259,8 +257,12 @@ jobs:
             return "pending"
         if any(r.status != "completed" for r in runs):
             return "pending"
+        # #IMP3 : action_required attend une intervention humaine (ex: approval).
+        # Ne pas retourner failure -> sinon retry infini. Rester en pending.
+        if any(r.conclusion == "action_required" for r in runs):
+            return "pending"
         if any(
-            r.conclusion in ("failure", "cancelled", "timed_out", "action_required")
+            r.conclusion in ("failure", "cancelled", "timed_out")
             for r in runs
         ):
             return "failure"

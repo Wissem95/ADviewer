@@ -142,6 +142,19 @@ def test_github_service_get_pr_check_status_success():
     assert svc.get_pr_check_status(10) == "success"
 
 
+def test_github_service_get_pr_check_status_action_required_stays_pending():
+    """#IMP3 : action_required = approbation humaine, pas un failure."""
+    svc = _make_service()
+    mock_pr = MagicMock()
+    mock_pr.head.sha = "abc"
+    svc._repo.get_pull.return_value = mock_pr
+    run = MagicMock(status="completed", conclusion="action_required")
+    mock_commit = MagicMock()
+    mock_commit.get_check_runs.return_value = [run]
+    svc._repo.get_commit.return_value = mock_commit
+    assert svc.get_pr_check_status(10) == "pending"
+
+
 def test_github_service_get_pr_check_status_failure():
     """Un run avec conclusion='failure' → 'failure' (échec global)."""
     svc = _make_service()

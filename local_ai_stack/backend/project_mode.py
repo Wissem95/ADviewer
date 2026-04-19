@@ -24,11 +24,16 @@ from backend.git_service import GitService
 from backend.github_service import GitHubService
 from backend.llm_manager import LLMManager
 from backend.models import LLMRole
+from backend.project_slug import slugify_task_branch
 from backend.roadmap import ProjectRoadmap, SubTask, Task
 from backend.ws_streamer import WSStreamer
 
 
 # ── Structures de données du Mode Projet ─────────────────────────────────────
+
+
+class _CIFailure(Exception):
+    """Signal interne : le CI GitHub Actions a échoué. Déclenche retry Niveau 2."""
 
 
 @dataclass
@@ -338,18 +343,18 @@ Règles :
         """
         # C9 — mémoriser la branche initiale pour tous les checkout de retour.
         initial_branch = self.git.get_current_branch()
-
-        branch_name = (
-            f"feature/{task.id.lower()}-"
-            + task.title.lower().replace(" ", "-")[:25].rstrip("-")
-        )
+        # #CRIT2 — même helper slug que GitHubService.create_issue_from_task.
+        branch_name = slugify_task_branch(task.id, task.title)
 
         for ci_attempt in range(1, self.MAX_CI_RETRIES + 1):
             await self.ws.emit_step(f"TICKET_EXECUTE (CI #{ci_attempt})", task.id)
             pr_number: int | None = None
 
             try:
-                self.git.create_branch(branch_name)
+                # #CRIT1 — create_or_reset_branch : idempotent sur retry (la
+                # branche d'une tentative précédente est reset au lieu de
+                # faire crasher "branch already exists").
+                self.git.create_or_reset_branch(branch_name)
                 roadmap.update_task_status(task.id, "in_progress")
                 roadmap.lock_file(branch_name, task.assigned_to)
 
@@ -385,9 +390,11 @@ Règles :
                     )
                     ci_ok = await self._wait_for_ci(pr_number)
                     if not ci_ok:
-                        # CI rouge → on considère cette tentative comme échec
-                        # et on laisse la boucle for réessayer.
-                        raise RuntimeError(
+                        # #IMP4 — _CIFailure spécifique : seul ce chemin
+                        # déclenche un retry ; les autres exceptions de la
+                        # boucle try sont des bugs et passent par le except
+                        # global non-retry plus bas.
+                        raise _CIFailure(
                             f"CI rouge sur PR #{pr_number} (tentative {ci_attempt})"
                         )
 
@@ -397,24 +404,39 @@ Règles :
                 )
                 return True
 
-            except Exception as e:
+            except _CIFailure as e:
+                # Retry autorisé : CI échoué côté GitHub Actions.
                 await self.ws.emit_step(f"TICKET_RETRY (#{ci_attempt})", task.id)
                 if ci_attempt == self.MAX_CI_RETRIES:
-                    roadmap.update_task_status(task.id, "failed")
-                    if task.github_issue:
-                        self.github.comment_issue(
-                            task.github_issue,
-                            f"❌ Échec total après {self.MAX_CI_RETRIES} tentatives CI.\n"
-                            f"Erreur : {str(e)[:200]}\nIntervention humaine requise.",
-                        )
-                        self.github.add_label_to_issue(
-                            task.github_issue, "blocked"
-                        )
+                    self._fail_ticket(task, roadmap, str(e))
                     return False
                 # C9 — retour à la branche initiale avant retry.
                 try:
                     self.git.checkout(initial_branch)
                 except Exception:
                     pass
+            except Exception as e:
+                # #IMP4 — bug logique (git/GitHub/agent) : on ne retry pas
+                # indéfiniment sur un échec non-CI ; on marque failed et on
+                # laisse l'humain regarder.
+                self._fail_ticket(task, roadmap, f"Erreur non-CI : {e}")
+                try:
+                    self.git.checkout(initial_branch)
+                except Exception:
+                    pass
+                return False
 
         return False
+
+    def _fail_ticket(self, task: Task, roadmap: ProjectRoadmap, reason: str) -> None:
+        """Marque une task échouée + notifie l'issue GitHub si présente."""
+        roadmap.update_task_status(task.id, "failed")
+        if task.github_issue:
+            try:
+                self.github.comment_issue(
+                    task.github_issue,
+                    f"❌ Échec : {reason[:200]}\nIntervention humaine requise.",
+                )
+                self.github.add_label_to_issue(task.github_issue, "blocked")
+            except Exception:
+                pass

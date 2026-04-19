@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 import psutil
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 
 from backend.models import LLMRole, LLMConfig, RoutingDecision, WSEvent
 from backend.llm_manager import LLMManager, FALLBACK_CHAINS
@@ -79,6 +80,11 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
         )
         # Forcer les mêmes instances de mémoire (pour cohérence)
         app.state.orchestrator.long_memory = long_memory
+
+        # #IMP5 — psutil.cpu_percent(interval=None) retourne 0.0 au 1er
+        # appel car il calcule la différence depuis le dernier. On "amorce"
+        # le compteur ici pour que le 1er broadcast soit significatif.
+        psutil.cpu_percent(interval=None)
 
         # Background task : broadcast CPU/RAM toutes les 5s (Plan 4 Task 6).
         sys_task = asyncio.create_task(
@@ -163,20 +169,28 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
     async def ci_webhook(request: Request):
         """Webhook GitHub Actions check_run/check_suite.
 
-        Accepte les events GitHub, vérifie éventuellement la signature HMAC
-        (si GITHUB_WEBHOOK_SECRET défini), émet un WSEvent "ci_status" pour
-        l'UI (MonitoringTab) et stocke l'info pour un futur retry réel
-        (si souhaité via /project/retry-ticket, Phase 2+).
+        Sécurité :
+        - #CRIT4 : fail-secure. Si ``GITHUB_WEBHOOK_SECRET`` est vide, on
+          refuse par défaut sauf si ``LOCALCODER_ALLOW_UNSIGNED_WEBHOOK=1``
+          est explicitement positionné (dev/test local).
+        - #CRIT3 : signature invalide ou secret manquant → 401 (non-2xx),
+          ce qui permet à GitHub de relivrer le webhook et de remonter
+          l'échec côté repo Settings > Webhooks.
 
-        Config côté repo : Settings → Webhooks → POST /ci-webhook, content
-        type application/json, events check_run + check_suite.
+        Config côté repo : Settings → Webhooks → POST /ci-webhook,
+        content type application/json, events check_run + check_suite.
         """
         import hashlib
         import hmac
         import os
 
         raw_body = await request.body()
-        secret = os.environ.get("GITHUB_WEBHOOK_SECRET")
+        secret = os.environ.get("GITHUB_WEBHOOK_SECRET") or ""
+        allow_unsigned = (
+            os.environ.get("LOCALCODER_ALLOW_UNSIGNED_WEBHOOK", "").lower()
+            in ("1", "true", "yes")
+        )
+
         if secret:
             signature = request.headers.get("X-Hub-Signature-256", "")
             expected = (
@@ -184,12 +198,30 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
                 + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
             )
             if not hmac.compare_digest(signature, expected):
-                return {"ok": False, "error": "invalid signature"}
+                return JSONResponse(
+                    status_code=401,
+                    content={"ok": False, "error": "invalid signature"},
+                )
+        elif not allow_unsigned:
+            # #CRIT4 fail-secure : pas de secret configuré, pas d'override.
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "ok": False,
+                    "error": (
+                        "webhook unsigned refusé. Définir GITHUB_WEBHOOK_SECRET, "
+                        "ou LOCALCODER_ALLOW_UNSIGNED_WEBHOOK=1 pour dev local."
+                    ),
+                },
+            )
 
         try:
             payload = json.loads(raw_body.decode() or "{}")
         except json.JSONDecodeError:
-            return {"ok": False, "error": "invalid json"}
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "invalid json"},
+            )
 
         event = request.headers.get("X-GitHub-Event", "unknown")
         conclusion = (

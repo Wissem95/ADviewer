@@ -147,7 +147,7 @@ async def test_execute_ticket_c9_restore_initial_branch():
     pm.git.stage = MagicMock()
     pm.git.commit = MagicMock()
     pm.git.push = MagicMock()
-    pm.git.create_branch = MagicMock()
+    pm.git.create_or_reset_branch = MagicMock()
     pm.git.checkout = MagicMock()
     pm.github.create_pr = MagicMock(return_value=77)
     pm._wait_for_ci = AsyncMock(return_value=True)
@@ -182,7 +182,7 @@ async def test_execute_ticket_c10_push_uses_branch_name_directly():
     pm.git.stage = MagicMock()
     pm.git.commit = MagicMock()
     pm.git.push = MagicMock()
-    pm.git.create_branch = MagicMock()
+    pm.git.create_or_reset_branch = MagicMock()
     pm.git.checkout = MagicMock()
     pm.github.create_pr = MagicMock(return_value=77)
     pm._wait_for_ci = AsyncMock(return_value=True)
@@ -241,7 +241,7 @@ async def test_execute_ticket_retries_on_ci_failure():
     pm.git.stage = MagicMock()
     pm.git.commit = MagicMock()
     pm.git.push = MagicMock()
-    pm.git.create_branch = MagicMock()
+    pm.git.create_or_reset_branch = MagicMock()
     pm.git.checkout = MagicMock()
     pm.github.create_pr = MagicMock(return_value=77)
     # 1er tour CI rouge, 2e tour CI vert
@@ -261,11 +261,64 @@ async def test_execute_ticket_retries_on_ci_failure():
 
 
 @pytest.mark.asyncio
+async def test_execute_ticket_retry_uses_create_or_reset_branch():
+    """#CRIT1 : retry re-crée la même branche sans échouer (reset au lieu de create)."""
+    pm = _make_project_mode()
+    pm.git.get_current_branch = MagicMock(return_value="main")
+    pm.git.get_modified_files = MagicMock(return_value=[])
+    pm.git.create_or_reset_branch = MagicMock()
+    pm.git.checkout = MagicMock()
+    pm.github.create_pr = MagicMock(return_value=88)
+    pm._wait_for_ci = AsyncMock(side_effect=[False, True])
+
+    task = Task(id="T-999", title="Retry test", status="pending", github_issue=1)
+    roadmap = ProjectRoadmap(project="demo")
+    roadmap.tasks.append(task)
+
+    async def fake_coro():
+        return MagicMock(content="ok")
+
+    success = await pm.execute_ticket(task, roadmap, fake_coro)
+    assert success is True
+    # Appelé 2× avec la même branche, sans erreur "branch exists".
+    assert pm.git.create_or_reset_branch.call_count == 2
+    pm.git.create_or_reset_branch.assert_called_with("feature/t-999-retry-test")
+
+
+@pytest.mark.asyncio
+async def test_execute_ticket_non_ci_error_fails_immediately():
+    """#IMP4 : bug logique (GitHubServiceError) → failed sans retry."""
+    pm = _make_project_mode()
+    pm.git.get_current_branch = MagicMock(return_value="main")
+    pm.git.get_modified_files = MagicMock(return_value=[])
+    pm.git.create_or_reset_branch = MagicMock()
+    pm.git.checkout = MagicMock()
+    # create_pr lève une GitHubServiceError → pas un CI rouge, bug logique.
+    from backend.github_service import GitHubServiceError
+    pm.github.create_pr = MagicMock(side_effect=GitHubServiceError("403 perms"))
+    pm._wait_for_ci = AsyncMock()
+
+    task = Task(id="T-042", title="Bug", status="pending", github_issue=11)
+    roadmap = ProjectRoadmap(project="demo")
+    roadmap.tasks.append(task)
+
+    async def fake_coro():
+        return MagicMock(content="ok")
+
+    success = await pm.execute_ticket(task, roadmap, fake_coro)
+    assert success is False
+    # Une seule tentative (pas de retry sur non-CI error).
+    assert pm.git.create_or_reset_branch.call_count == 1
+    assert pm._wait_for_ci.await_count == 0
+    assert roadmap.tasks[0].status == "failed"
+
+
+@pytest.mark.asyncio
 async def test_execute_ticket_marks_done_on_success():
     pm = _make_project_mode()
     pm.git.get_current_branch = MagicMock(return_value="main")
     pm.git.get_modified_files = MagicMock(return_value=[])
-    pm.git.create_branch = MagicMock()
+    pm.git.create_or_reset_branch = MagicMock()
     pm.git.checkout = MagicMock()
     pm.github.create_pr = MagicMock(return_value=77)
     pm._wait_for_ci = AsyncMock(return_value=True)

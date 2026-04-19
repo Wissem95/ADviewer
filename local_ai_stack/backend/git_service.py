@@ -24,12 +24,28 @@ class GitService:
         self.repo_path = Path(self.repo.working_dir)
 
     def get_current_branch(self) -> str:
-        """Retourne le nom de la branche active."""
-        return self.repo.active_branch.name
+        """Retourne le nom de la branche active.
+
+        En detached HEAD (#IMP2), ``active_branch`` lève TypeError : on
+        retourne alors le short SHA préfixé par ``HEAD@``.
+        """
+        try:
+            return self.repo.active_branch.name
+        except TypeError:
+            return f"HEAD@{self.repo.head.commit.hexsha[:8]}"
 
     def create_branch(self, name: str) -> None:
         """Crée et checkout une nouvelle branche depuis HEAD."""
         self.repo.git.checkout("-b", name)
+
+    def create_or_reset_branch(self, name: str) -> None:
+        """Crée la branche si absente, la reset sur HEAD si elle existe.
+
+        Équivalent de ``git checkout -B <name>``. Utilisé pour les retries
+        CI (#CRIT1) : la branche locale d'une tentative précédente est
+        écrasée au lieu de faire échouer le retry sur "branch exists".
+        """
+        self.repo.git.checkout("-B", name)
 
     def checkout(self, branch: str) -> None:
         """Checkout une branche existante."""
@@ -54,8 +70,23 @@ class GitService:
         return sorted(modified)
 
     def stage(self, files: list[str]) -> None:
-        """Stage les fichiers spécifiés."""
-        self.repo.index.add(files)
+        """Stage les fichiers spécifiés (ajouts, modifs, suppressions).
+
+        #IMP1 : ``index.add`` ne gère pas les suppressions. On route vers
+        ``index.remove`` pour les chemins absents du disque, ``index.add``
+        pour le reste.
+        """
+        present: list[str] = []
+        missing: list[str] = []
+        for f in files:
+            if (self.repo_path / f).exists():
+                present.append(f)
+            else:
+                missing.append(f)
+        if present:
+            self.repo.index.add(present)
+        if missing:
+            self.repo.index.remove(missing, working_tree=False)
 
     def commit(self, message: str) -> str:
         """Commit les fichiers stagés. Retourne le hash court du commit."""
