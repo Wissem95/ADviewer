@@ -1,0 +1,41 @@
+# ============================================
+# CONFIG LOCALCODER — Parametres personnels
+# ============================================
+
+# --- Mode local (gratuit, fonctionne en avion) ---
+local:
+  main_model: ollama_chat/qwen2.5-coder:14b
+  fast_model: ollama_chat/qwen2.5-coder:7b
+  context_size: 16384
+
+# --- Mode API (payant, pour les taches complexes) ---
+# Decommente et remplis quand tu veux activer le fallback API
+api:
+  # DeepSeek : le meilleur rapport qualite/prix pour le code
+  # Inscris-toi sur https://platform.deepseek.com/
+  # deepseek_api_key: "sk-..."
+
+  # OpenRouter : acces a tous les modeles via une seule cle
+  # Inscris-toi sur https://openrouter.ai/
+  # openrouter_api_key: "sk-or-..."
+
+  # Anthropic : Claude (quand tu veux le meilleur, mais cher)
+  # anthropic_api_key: "sk-ant-..."
+
+  # Modeles API preferes (par ordre de priorite)
+  preferred_models:
+    - deepseek/deepseek-coder          # ~0.003$ par requete
+    - deepseek/deepseek-reasoner       # ~0.005$ par requete (raisonnement)
+    - anthropic/claude-sonnet-4-20250514  # ~0.02$ par requete
+
+# --- Seuils de routage ---
+routing:
+  # Si la tache mentionne ces mots-cles, utiliser l'API
+  complex_keywords:
+    - "refactore tout"
+    - "architecture"
+    - "multi-fichiers"
+    - "migration"
+    - "debug complexe"
+  # Nombre max de fichiers avant de basculer sur l'API
+  max_local_files: 3

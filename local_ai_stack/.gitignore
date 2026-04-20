@@ -1,0 +1,40 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+build/
+*.egg-info/
+.DS_Store
+.env
+.env.local
+*.key
+*.pem
+*.sqlite
+*.db
+*.log
+.aider.tags.cache.v3/
+.aider.chat.history.md
+.aider.input.history
+.aider.conf.*.yml
+.aider.conf.yml
+.aider.model.metadata.json
+.aider.model.settings.yml
+.aiderignore
+
+# Outputs Tauri / build (on commit Cargo.lock pour reproductibilité)
+ui/src-tauri/target/
+
+# Vite / TS build artifacts
+ui/dist/
+ui/.vite/
+
+# Local DB (si créée par le backend en dev)
+localcoder.db
+*.sqlite-journal
+
