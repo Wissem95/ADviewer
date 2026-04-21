@@ -1,6 +1,10 @@
 import pytest
 from pathlib import Path
-from backend.context_builder import build_context_for, load_project_conventions
+from backend.context_builder import (
+    build_context_for,
+    count_tokens,
+    load_project_conventions,
+)
 from backend.roadmap import ProjectRoadmap, Task, Decision
 
 
@@ -55,3 +59,30 @@ def test_load_project_conventions_with_both_files(tmp_path, monkeypatch):
     ctx = load_project_conventions()
     assert "CONVENTIONS.md" in ctx
     assert "AGENT_RULES.md" in ctx
+
+
+# ── count_tokens (Plan 5A Task 2) ────────────────────────────────────────────
+
+def test_count_tokens_short_english():
+    """Un petit texte en anglais doit compter quelques tokens."""
+    n = count_tokens("hello world")
+    assert 1 <= n <= 5
+
+
+def test_count_tokens_long_text():
+    """Répétition de phrase classique → 400-800 tokens (borne large)."""
+    text = "The quick brown fox jumps over the lazy dog. " * 50
+    n = count_tokens(text)
+    assert 400 <= n <= 800
+
+
+def test_count_tokens_fallback_unknown_model():
+    """Si le modèle est inconnu de tiktoken, fallback sur len(text) // 4."""
+    text = "hello world"
+    n = count_tokens(text, model="unknown-model-xyz-12345")
+    assert n == len(text) // 4
+
+
+def test_count_tokens_empty_string_returns_zero():
+    """Chaîne vide → 0 tokens, pas d'erreur."""
+    assert count_tokens("") == 0

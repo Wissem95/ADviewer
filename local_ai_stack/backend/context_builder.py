@@ -6,11 +6,43 @@ Le Context Builder compresse l'information à l'essentiel.
 Deux modes :
 - Conversation simple (roadmap=None) : CONVENTIONS.md + AGENT_RULES.md
 - Mode projet (roadmap != None) : roadmap.get_*() sections ciblées
+
+Expose aussi ``count_tokens`` utilisé par le cost estimator (Plan 5A Task 3)
+et par toutes les étapes du pipeline rigoureux pour mesurer leurs budgets.
 """
 from pathlib import Path
 from typing import Optional
 
+import tiktoken
+
 from backend.roadmap import ProjectRoadmap
+
+
+# Cache par modèle pour éviter de recharger l'encodeur tiktoken.
+# Valeur None = modèle inconnu → on fallback sur len//4.
+_ENC_CACHE: dict[str, Optional["tiktoken.Encoding"]] = {}
+
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """Compte le nombre de tokens dans ``text`` pour un modèle donné.
+
+    - Utilise ``tiktoken.encoding_for_model`` quand possible (précis).
+    - Fallback sur ``len(text) // 4`` si le modèle est inconnu de tiktoken
+      (DeepSeek, MiniMax, Gemini n'ont pas d'encodeur officiel — l'approx
+      4 chars/token reste raisonnable sur du texte latin).
+    - Retourne 0 pour une chaîne vide.
+    """
+    if not text:
+        return 0
+    if model not in _ENC_CACHE:
+        try:
+            _ENC_CACHE[model] = tiktoken.encoding_for_model(model)
+        except KeyError:
+            _ENC_CACHE[model] = None
+    enc = _ENC_CACHE[model]
+    if enc is None:
+        return len(text) // 4
+    return len(enc.encode(text))
 
 
 def load_project_conventions() -> str:
