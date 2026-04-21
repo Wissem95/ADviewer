@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from backend.llm_manager import (
@@ -133,3 +135,102 @@ async def test_llm_manager_injects_system_prompt_when_available(tmp_path, monkey
     assert len(captured_messages[0]) == 2  # system + user
     assert captured_messages[0][0]["role"] == "system"
     assert "MINIMAX" in captured_messages[0][0]["content"]
+
+
+# ── Health check (Plan 5A Task 1) ────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_health_check_returns_ok_latency_error():
+    """health_check retourne {ok: True, latency_ms: int, error: None} sur succès."""
+    manager = LLMManager()
+
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+
+    with patch("backend.llm_manager.acompletion", new=AsyncMock(return_value=fake_response)):
+        result = await manager.health_check("minimax/minimax-m2.5")
+
+    assert result["ok"] is True
+    assert isinstance(result["latency_ms"], int)
+    assert result["latency_ms"] >= 0
+    assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_health_check_returns_error_on_failure():
+    """health_check retourne {ok: False, error: str} sur exception."""
+    manager = LLMManager()
+
+    async def fail(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    with patch("backend.llm_manager.acompletion", side_effect=fail):
+        result = await manager.health_check("minimax/minimax-m2.5")
+
+    assert result["ok"] is False
+    assert result["error"] == "provider down"
+    assert isinstance(result["latency_ms"], int)
+
+
+# ── Live smoke tests (skippés sans API keys) ────────────────────────────────
+#
+# Pour lancer : exporter les 4 API keys puis ``scripts/smoke_llms.sh``.
+
+@pytest.mark.llm_live
+@pytest.mark.skipif(
+    not os.environ.get("DEEPSEEK_API_KEY"),
+    reason="DEEPSEEK_API_KEY absent",
+)
+@pytest.mark.asyncio
+async def test_live_deepseek_reachable():
+    manager = LLMManager()
+    result = await manager.health_check("deepseek/deepseek-chat")
+    assert result["ok"] is True, f"DeepSeek unreachable: {result['error']}"
+
+
+@pytest.mark.llm_live
+@pytest.mark.skipif(
+    not os.environ.get("MINIMAX_API_KEY"),
+    reason="MINIMAX_API_KEY absent",
+)
+@pytest.mark.asyncio
+async def test_live_minimax_reachable():
+    manager = LLMManager()
+    result = await manager.health_check("minimax/minimax-m2.5")
+    assert result["ok"] is True, f"MiniMax unreachable: {result['error']}"
+
+
+@pytest.mark.llm_live
+@pytest.mark.skipif(
+    not os.environ.get("GEMINI_API_KEY"),
+    reason="GEMINI_API_KEY absent",
+)
+@pytest.mark.asyncio
+async def test_live_gemini_pro_reachable():
+    manager = LLMManager()
+    result = await manager.health_check("gemini/gemini-2.5-pro")
+    assert result["ok"] is True, f"Gemini Pro unreachable: {result['error']}"
+
+
+@pytest.mark.llm_live
+@pytest.mark.skipif(
+    not os.environ.get("GEMINI_API_KEY"),
+    reason="GEMINI_API_KEY absent",
+)
+@pytest.mark.asyncio
+async def test_live_gemini_flash_reachable():
+    manager = LLMManager()
+    result = await manager.health_check("gemini/gemini-2.5-flash")
+    assert result["ok"] is True, f"Gemini Flash unreachable: {result['error']}"
+
+
+@pytest.mark.llm_live
+@pytest.mark.skipif(
+    not os.environ.get("MISTRAL_API_KEY"),
+    reason="MISTRAL_API_KEY absent",
+)
+@pytest.mark.asyncio
+async def test_live_codestral_reachable():
+    manager = LLMManager()
+    result = await manager.health_check("mistral/codestral-2")
+    assert result["ok"] is True, f"Codestral unreachable: {result['error']}"

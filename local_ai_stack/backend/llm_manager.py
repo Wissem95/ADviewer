@@ -13,6 +13,7 @@ Correction I14 : les system prompts MD sont chargés depuis backend/prompts/
 import time
 from collections import deque
 from pathlib import Path
+from time import perf_counter
 from typing import Optional
 
 from litellm import acompletion
@@ -194,3 +195,32 @@ class LLMManager:
             f"Tous les LLMs de la chain {role.value} ont échoué. "
             f"Dernière erreur : {last_error}"
         )
+
+    # ── Health check ─────────────────────────────────────────────────────────
+
+    async def health_check(self, llm_id: str) -> dict:
+        """Ping minimal d'un LLM pour vérifier qu'il répond.
+
+        Envoie un prompt trivial avec `max_tokens=1` et timeout court.
+        Retourne ``{ok: bool, latency_ms: int, error: str | None}``.
+        Ne lève jamais : toute exception est capturée et retournée dans ``error``.
+        """
+        start = perf_counter()
+        try:
+            await acompletion(
+                model=llm_id,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+                timeout=10,
+            )
+            return {
+                "ok": True,
+                "latency_ms": int((perf_counter() - start) * 1000),
+                "error": None,
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "latency_ms": int((perf_counter() - start) * 1000),
+                "error": str(e)[:200],
+            }

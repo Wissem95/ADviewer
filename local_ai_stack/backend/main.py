@@ -353,6 +353,20 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
             for c in app.state.llm_configs
         ]
 
+    @app.get("/llms/health")
+    async def llms_health():
+        """Health check des 5 LLMs en parallèle.
+
+        Retourne {llm_id: {ok, latency_ms, error}} pour chaque LLM configuré.
+        Ne lève jamais : les erreurs sont remontées par LLM dans ``error``.
+        """
+        manager: LLMManager = app.state.llm_manager
+        llm_ids = [c.id for c in app.state.llm_configs]
+        results = await asyncio.gather(
+            *(manager.health_check(llm_id) for llm_id in llm_ids)
+        )
+        return dict(zip(llm_ids, results))
+
     @app.post("/llms/{llm_id:path}/disable")
     async def disable_llm(llm_id: str):
         """Désactive un LLM (ne sera plus utilisé par le routeur)."""

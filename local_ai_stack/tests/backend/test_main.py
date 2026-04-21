@@ -56,6 +56,34 @@ async def test_llms_list_endpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_llms_health_endpoint(app):
+    """GET /llms/health retourne le health_check des 5 LLMs en parallèle."""
+    # Mock health_check sur l'instance LLMManager utilisée par l'app
+    async def fake_health(llm_id: str) -> dict:
+        return {"ok": True, "latency_ms": 42, "error": None}
+
+    async with app.router.lifespan_context(app):
+        app.state.llm_manager.health_check = fake_health
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/llms/health")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict)
+    # Les 5 LLMs configurés sont tous présents dans la réponse
+    assert "minimax/minimax-m2.5" in data
+    assert "gemini/gemini-2.5-pro" in data
+    assert "gemini/gemini-2.5-flash" in data
+    assert "deepseek/deepseek-r1" in data
+    assert "mistral/codestral-2" in data
+    for llm_id, result in data.items():
+        assert result["ok"] is True
+        assert result["latency_ms"] == 42
+        assert result["error"] is None
+
+
+@pytest.mark.asyncio
 async def test_disable_enable_llm(client):
     # Disable
     resp = await client.post("/llms/minimax/minimax-m2.5/disable")
