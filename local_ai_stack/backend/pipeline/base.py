@@ -77,6 +77,11 @@ class Stage(ABC):
                 error=str(e)[:300],
             )
 
+        ctx.stage_results[self.name] = result
+        ctx.total_cost_usd += result.cost_usd
+        ctx.total_tokens_in += result.tokens_in
+        ctx.total_tokens_out += result.tokens_out
+
         await self._emit_complete(ctx.session_id, result)
         return result
 
