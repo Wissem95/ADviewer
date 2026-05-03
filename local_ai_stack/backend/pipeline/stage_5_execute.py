@@ -109,6 +109,7 @@ class Stage5Execute(Stage):
         system_prompt = self._load_system_prompt()
         plan_hint = self._plan_hint(ctx)
 
+        retry_hint = self._retry_hint(ctx)
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
             {
@@ -116,6 +117,7 @@ class Stage5Execute(Stage):
                 "content": (
                     f"PROMPT UTILISATEUR:\n{ctx.prompt}\n\n"
                     f"{plan_hint}\n\n"
+                    f"{retry_hint}"
                     "Applique les changements via les tools write."
                 ),
             },
@@ -201,3 +203,18 @@ class Stage5Execute(Stage):
                 return f"GROUNDED_CONTEXT (résumé):\n{ground.summary[:1500]}"
             return "Plan non fourni — exécute selon le prompt utilisateur."
         return f"PLAN:\n{plan}"
+
+    @staticmethod
+    def _retry_hint(ctx: PipelineContext) -> str:
+        """Si on est en retry, injecte les erreurs VERIFY précédentes."""
+        rc = getattr(ctx, "retry_context", None)
+        if not rc:
+            return ""
+        attempt = rc.get("attempt", 2)
+        prev = rc.get("previous_verify_errors", [])
+        formatted = "\n".join(f"- {e}" for e in prev[:30])
+        return (
+            f"RETRY (tentative #{attempt}/3) — VERIFY a échoué à la passe "
+            f"précédente avec les erreurs suivantes :\n{formatted}\n\n"
+            "Corrige le code pour que ces erreurs disparaissent.\n\n"
+        )

@@ -42,6 +42,9 @@ class PipelineContext:
     total_cost_usd: float = 0.0
     total_tokens_in: int = 0
     total_tokens_out: int = 0
+    # Plan 5B Task 3 : rempli par Pipeline.run quand Stage7Verify échoue, lu
+    # par Stage5Execute pour injecter les erreurs VERIFY au LLM en retry.
+    retry_context: Optional[dict] = None
 
     def get_stage_output(self, stage_name: str) -> Any:
         """Raccourci : retourne le ``output`` d'un stage précédent, ou None."""
