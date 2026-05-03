@@ -510,6 +510,45 @@ local_ai_stack/
 
 ---
 
+## Pipeline rigoureux (v2.1 en cours — Plan 5A)
+
+LocalCoder v2.1 introduit un pipeline 11 étapes pour passer de "génération
+texte" à "modifications fichiers vérifiées" avec re-vérifications croisées
+et rollback automatique. Cible : 99 % succès simple / 95 % complexe.
+
+**Spec complète** : `docs/superpowers/specs/2026-04-20-pipeline-rigoureux.md`.
+
+### 11 étapes du pipeline
+
+`ESTIMATE → INTAKE → CHALLENGE → GROUND → PLAN → PLAN_REVIEW → EXECUTE → SELF_CHECK → VERIFY → REVIEW → COMMIT`
+
+Chaque étape utilise le LLM le mieux adapté à son rôle (Gemini Flash pour
+classification, Pro pour analyse/review, R1 pour architecture, MiniMax M2.5
+pour coding) via dispatch multi-LLM.
+
+### État actuel — fin Plan 5A (2026-05)
+
+Mode **simple** fonctionnel de bout en bout (5/11 étapes implémentées) :
+
+- `Stage0Estimate` (Gemini Flash) — classification + cost preview.
+- `Stage1Intake` (Gemini Flash) — validation non-ambiguïté.
+- `Stage3Ground` (MiniMax M2.5) — tool-calling read-only ancrage factuel.
+- `Stage5Execute` (MiniMax M2.5) — tool-calling write + git stash rollback.
+- `Stage7Verify` (mécanique, pas de LLM) — `ruff check` + `cargo check`.
+
+Pipeline orchestrator dispatche les stages selon `PipelineMode`. UI : modal
+ESTIMATE de validation coût + TraceViewer temps réel.
+
+### Plans à venir
+
+- **Plan 5B** — VERIFY étendu (pytest/vitest + retry max 3 + rollback robuste) + streaming.
+- **Plan 5C** — CHALLENGE multi-LLM + PLAN consensus 2/2.
+- **Plan 5D** — SELF-CHECK + REVIEW consensus 2/2.
+- **Plan 5E** — UX raffinée + Settings + suivi coûts.
+- **Plan 5F** — Packaging + intégration Ollama + release v2.
+
+---
+
 ## Version
 
 **LocalCoder v0.3** — 2026-04-05
