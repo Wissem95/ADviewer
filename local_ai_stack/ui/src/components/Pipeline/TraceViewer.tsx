@@ -7,6 +7,7 @@
 import type { JSX } from "react";
 import { usePipelineStore } from "../../stores/pipelineStore";
 import { StageRow } from "./StageRow";
+import { StreamingBubble } from "./StreamingBubble";
 
 export function TraceViewer(): JSX.Element | null {
   const estimate = usePipelineStore((s) => s.estimate);
@@ -51,6 +52,8 @@ export function TraceViewer(): JSX.Element | null {
           <StageRow key={stage.name} index={idx} stage={stage} />
         ))}
       </div>
+
+      <StreamingBubble />
 
       {inProgress && (
         <footer className="mt-3 flex justify-end">

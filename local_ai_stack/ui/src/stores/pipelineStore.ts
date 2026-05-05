@@ -23,6 +23,10 @@ interface PipelineStore {
   stages: StageProgress[];
   totalCostUSD: number;
   finalResult: PipelineResultPayload | null;
+  // Plan 5B Task 5 : buffer du token-stream en cours (vidé sur stage_complete).
+  streamingBuffer: string;
+  streamingStage: string | null;
+  streamingLLM: string | null;
 
   onEstimateReceived: (estimate: EstimateResult) => void;
   confirm: (mode?: PipelineMode) => void;
@@ -39,6 +43,8 @@ interface PipelineStore {
   }) => void;
   onPipelineComplete: (result: PipelineResultPayload) => void;
   onPipelineRollback: (data: { reason: string }) => void;
+  onChatToken: (data: { token: string; stage: string; llm: string | null }) => void;
+  clearStreamingBuffer: () => void;
   reset: () => void;
 }
 
@@ -49,6 +55,9 @@ const initialState = {
   stages: [] as StageProgress[],
   totalCostUSD: 0,
   finalResult: null,
+  streamingBuffer: "",
+  streamingStage: null as string | null,
+  streamingLLM: null as string | null,
 };
 
 export const usePipelineStore = create<PipelineStore>((set, get) => ({
@@ -95,6 +104,10 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   onStageStart: ({ stage, llm }) => {
     set((state) => ({
       currentStageName: stage,
+      // Reset du buffer streaming pour ce nouveau stage.
+      streamingBuffer: "",
+      streamingStage: stage,
+      streamingLLM: llm,
       stages: state.stages.map((s) =>
         s.name === stage ? { ...s, status: "running" as StageStatus, llm: llm ?? s.llm } : s,
       ),
@@ -120,8 +133,24 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       return {
         stages: updated,
         totalCostUSD: state.totalCostUSD + (data.cost_usd ?? 0),
+        // Fige le buffer (efface) à la fin du stage.
+        streamingBuffer: "",
+        streamingStage: null,
+        streamingLLM: null,
       };
     });
+  },
+
+  onChatToken: ({ token, stage, llm }) => {
+    set((state) => ({
+      streamingBuffer: state.streamingBuffer + token,
+      streamingStage: stage,
+      streamingLLM: llm ?? state.streamingLLM,
+    }));
+  },
+
+  clearStreamingBuffer: () => {
+    set({ streamingBuffer: "", streamingStage: null, streamingLLM: null });
   },
 
   onPipelineComplete: (result) => {
@@ -171,6 +200,11 @@ export function connectPipelineStore(): () => void {
     }),
     ws.on("pipeline_rollback", (data) => {
       store.onPipelineRollback(data as { reason: string });
+    }),
+    ws.on("chat_token", (data) => {
+      store.onChatToken(
+        data as { token: string; stage: string; llm: string | null },
+      );
     }),
   ];
   return () => cleanups.forEach((fn) => fn());
