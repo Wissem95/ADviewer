@@ -19,6 +19,7 @@ from typing import Optional
 from litellm import acompletion
 
 from backend.models import LLMRole
+from backend.streaming import stream_llm_response
 
 
 # ── Emplacement des system prompts MD ────────────────────────────────────────
@@ -193,6 +194,54 @@ class LLMManager:
 
         raise LLMManagerError(
             f"Tous les LLMs de la chain {role.value} ont échoué. "
+            f"Dernière erreur : {last_error}"
+        )
+
+    # ── Appel streaming (Plan 5B Task 4) ─────────────────────────────────────
+
+    async def call_with_fallback_streaming(
+        self,
+        role: LLMRole,
+        messages: list[dict],
+        on_token,
+        temperature: float = 0.2,
+        timeout: int = 90,
+    ) -> dict:
+        """Comme ``call_with_fallback`` mais publie chaque token via ``on_token``.
+
+        Retourne ``{"content": str, "tokens": int, "llm_used": str}``.
+        Lève ``LLMManagerError`` si toute la fallback chain échoue.
+        """
+        system_prompt = _load_system_prompt(role)
+        if system_prompt and (not messages or messages[0].get("role") != "system"):
+            messages = [{"role": "system", "content": system_prompt}] + list(messages)
+
+        chain = FALLBACK_CHAINS.get(role, [])
+        last_error: Optional[Exception] = None
+
+        for model in chain:
+            if self.is_disabled(model):
+                continue
+            limiter = self._rate_limiters.get(model)
+            if limiter and not limiter.try_acquire():
+                last_error = LLMManagerError(f"Rate limit dépassé pour {model}")
+                continue
+
+            try:
+                result = await stream_llm_response(
+                    llm_id=model,
+                    messages=messages,
+                    on_token=on_token,
+                    temperature=temperature,
+                    timeout=timeout,
+                )
+                return {**result, "llm_used": model}
+            except Exception as e:
+                last_error = e
+                continue
+
+        raise LLMManagerError(
+            f"Tous les LLMs streaming de la chain {role.value} ont échoué. "
             f"Dernière erreur : {last_error}"
         )
 
