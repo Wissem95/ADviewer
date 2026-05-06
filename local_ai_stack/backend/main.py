@@ -430,6 +430,14 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
                             data={"message": str(e)[:300]},
                             session_id=session_id,
                         ))
+                elif msg_type == "pipeline_stop":
+                    # Plan 5B Task 6 : Stop button / Cmd+. côté UI.
+                    # Si une task pipeline est en cours pour cette session, on
+                    # la cancel ; sinon on log juste l'event.
+                    pipelines = getattr(app.state, "pipeline_tasks", {})
+                    task = pipelines.get(session_id)
+                    if task is not None and not task.done():
+                        task.cancel()
                 elif msg_type == "request_file_tree":
                     # Stub — Plan 4 étendra avec un vrai scanner
                     await streamer.send_to(session_id, WSEvent(

@@ -4,7 +4,7 @@
 // Header : prompt + mode + progression "X/Y stages".
 // Body : liste de StageRow.
 // Footer : bouton Stop (cancel).
-import type { JSX } from "react";
+import { useEffect, type JSX } from "react";
 import { usePipelineStore } from "../../stores/pipelineStore";
 import { StageRow } from "./StageRow";
 import { StreamingBubble } from "./StreamingBubble";
@@ -14,8 +14,21 @@ export function TraceViewer(): JSX.Element | null {
   const stages = usePipelineStore((s) => s.stages);
   const totalCostUSD = usePipelineStore((s) => s.totalCostUSD);
   const finalResult = usePipelineStore((s) => s.finalResult);
-  const cancel = usePipelineStore((s) => s.cancel);
+  const stop = usePipelineStore((s) => s.stop);
   const isAwaiting = usePipelineStore((s) => s.isAwaitingConfirmation);
+
+  // Plan 5B Task 6 : raccourci Cmd+. (macOS) ou Ctrl+. (autres) → stop.
+  useEffect(() => {
+    if (!estimate || isAwaiting || finalResult) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+        e.preventDefault();
+        stop("shortcut");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [estimate, isAwaiting, finalResult, stop]);
 
   // Tant que l'utilisateur n'a pas confirmé, le modal s'occupe de l'affichage.
   if (!estimate || stages.length === 0 || isAwaiting) return null;
@@ -56,9 +69,10 @@ export function TraceViewer(): JSX.Element | null {
       <StreamingBubble />
 
       {inProgress && (
-        <footer className="mt-3 flex justify-end">
+        <footer className="mt-3 flex justify-end items-center gap-2">
+          <span className="text-[10px] text-zinc-400">⌘. pour interrompre</span>
           <button
-            onClick={cancel}
+            onClick={() => stop("button")}
             className="px-3 py-1 text-xs rounded border border-red-300 dark:border-red-700 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
           >
             Stop

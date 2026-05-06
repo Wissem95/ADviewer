@@ -90,6 +90,34 @@ describe("TraceViewer", () => {
     store.confirm();
     render(<TraceViewer />);
     expect(screen.getByText("Stop")).toBeInTheDocument();
+    expect(screen.getByText(/⌘\./)).toBeInTheDocument();
+  });
+
+  it("clic Stop envoie pipeline_stop via ws.send", async () => {
+    const { ws } = await import("../ws");
+    const store = usePipelineStore.getState();
+    store.onEstimateReceived(sampleEstimate);
+    store.confirm();
+    render(<TraceViewer />);
+
+    const stopBtn = screen.getByText("Stop");
+    stopBtn.click();
+
+    expect(ws.send).toHaveBeenCalledWith("pipeline_stop", { reason: "button" });
+  });
+
+  it("Cmd+. envoie pipeline_stop via raccourci clavier", async () => {
+    const { ws } = await import("../ws");
+    const store = usePipelineStore.getState();
+    store.onEstimateReceived(sampleEstimate);
+    store.confirm();
+    render(<TraceViewer />);
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: ".", metaKey: true }),
+    );
+
+    expect(ws.send).toHaveBeenCalledWith("pipeline_stop", { reason: "shortcut" });
   });
 
   it("affiche succès final quand pipeline_complete success", () => {

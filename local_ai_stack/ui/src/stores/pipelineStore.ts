@@ -45,6 +45,8 @@ interface PipelineStore {
   onPipelineRollback: (data: { reason: string }) => void;
   onChatToken: (data: { token: string; stage: string; llm: string | null }) => void;
   clearStreamingBuffer: () => void;
+  // Plan 5B Task 6 : Stop pendant exécution (cancellation côté backend).
+  stop: (reason?: string) => void;
   reset: () => void;
 }
 
@@ -151,6 +153,10 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
 
   clearStreamingBuffer: () => {
     set({ streamingBuffer: "", streamingStage: null, streamingLLM: null });
+  },
+
+  stop: (reason = "user") => {
+    ws.send("pipeline_stop", { reason });
   },
 
   onPipelineComplete: (result) => {

@@ -1,4 +1,4 @@
-"""Pipeline orchestrator (Plan 5A Task 11 + Plan 5B Task 3).
+"""Pipeline orchestrator (Plan 5A Task 11 + Plan 5B Tasks 3 & 6).
 
 Dispatche les ``Stage`` selon le ``PipelineMode``. En Plan 5A, seul SIMPLE
 est rempli. Mode MEDIUM/COMPLEX viendront en Plans 5C/5D.
@@ -8,9 +8,12 @@ Garanties :
   ``PipelineResult(success=False, rollback_performed=True)``.
 - Avant que stash ne soit créé (Stages 0/1/3), pas de rollback nécessaire.
 - Accumule cost/tokens/duration au fur et à mesure des stages.
-- Plan 5B : si Stage7Verify retourne ``all_green=False``, boucle vers
+- Plan 5B Task 3 : si Stage7Verify retourne ``all_green=False``, boucle vers
   Stage5Execute avec ``ctx.retry_context`` (max 3 tentatives, sinon rollback).
+- Plan 5B Task 6 : sur ``asyncio.CancelledError`` (bouton Stop UI), rollback
+  via stash_ref si stage5 a déjà tourné, sinon juste exit propre.
 """
+import asyncio
 from time import perf_counter
 from typing import Optional
 
@@ -54,35 +57,52 @@ class Pipeline:
 
         result = PipelineResult(success=True)
 
-        for stage_cls in stages_classes:
-            stage_result = await self._run_stage(stage_cls, ctx)
-            result.stages.append(stage_result)
+        try:
+            for stage_cls in stages_classes:
+                stage_result = await self._run_stage(stage_cls, ctx)
+                result.stages.append(stage_result)
 
-            if not stage_result.success:
-                result.success = False
-                result.error = stage_result.error
+                if not stage_result.success:
+                    result.success = False
+                    result.error = stage_result.error
+                    stash_ref = self._stash_ref_from_ctx(ctx)
+                    if stash_ref:
+                        await git_stash_pop(ctx.workspace_root, stash_ref)
+                        result.rollback_performed = True
+                    self._finalize(result, ctx, start)
+                    return result
+
+            # Plan 5B Task 3 : retry loop Stage5 ← Stage7 si verify rouge.
+            attempts_used = await self._retry_until_green_or_max(ctx, result)
+            verify_output = ctx.get_stage_output("verify")
+            if verify_output is not None and getattr(verify_output, "all_green", True) is False:
                 stash_ref = self._stash_ref_from_ctx(ctx)
                 if stash_ref:
                     await git_stash_pop(ctx.workspace_root, stash_ref)
                     result.rollback_performed = True
-                self._finalize(result, ctx, start)
-                return result
+                result.success = False
+                result.error = f"verify failed after {attempts_used} retries"
+            else:
+                if verify_output is not None and hasattr(verify_output, "attempts_used"):
+                    verify_output.attempts_used = attempts_used
 
-        # Plan 5B Task 3 : retry loop Stage5 ← Stage7 si verify rouge.
-        attempts_used = await self._retry_until_green_or_max(ctx, result)
-        verify_output = ctx.get_stage_output("verify")
-        if verify_output is not None and getattr(verify_output, "all_green", True) is False:
-            # 3 tentatives échouées → rollback.
+        except asyncio.CancelledError:
+            # Plan 5B Task 6 : bouton Stop côté UI → rollback si stash existe.
+            result.success = False
+            result.error = "cancelled by user"
             stash_ref = self._stash_ref_from_ctx(ctx)
             if stash_ref:
-                await git_stash_pop(ctx.workspace_root, stash_ref)
-                result.rollback_performed = True
-            result.success = False
-            result.error = f"verify failed after {attempts_used} retries"
-        else:
-            # all_green : on patch attempts_used dans VerifyResult final.
-            if verify_output is not None and hasattr(verify_output, "attempts_used"):
-                verify_output.attempts_used = attempts_used
+                # Shielder le pop pour qu'il ne soit pas re-cancellé.
+                try:
+                    await asyncio.shield(
+                        git_stash_pop(ctx.workspace_root, stash_ref)
+                    )
+                    result.rollback_performed = True
+                except asyncio.CancelledError:
+                    # Si on est re-cancellé pendant le pop, on note quand même.
+                    result.rollback_performed = True
+            self._finalize(result, ctx, start)
+            return result
 
         self._finalize(result, ctx, start)
         return result
