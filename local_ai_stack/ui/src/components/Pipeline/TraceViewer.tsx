@@ -8,6 +8,9 @@ import { useEffect, type JSX } from "react";
 import { usePipelineStore } from "../../stores/pipelineStore";
 import { StageRow } from "./StageRow";
 import { StreamingBubble } from "./StreamingBubble";
+import { BudgetIndicator } from "./BudgetIndicator";
+
+const DEFAULT_BUDGET_CAP_USD = 1.0;
 
 export function TraceViewer(): JSX.Element | null {
   const estimate = usePipelineStore((s) => s.estimate);
@@ -59,6 +62,10 @@ export function TraceViewer(): JSX.Element | null {
           <div className="font-mono">${totalCostUSD.toFixed(4)}</div>
         </div>
       </header>
+
+      <div className="mb-2">
+        <BudgetIndicator current={totalCostUSD} cap={DEFAULT_BUDGET_CAP_USD} />
+      </div>
 
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {stages.map((stage, idx) => (

@@ -17,6 +17,7 @@ import asyncio
 from time import perf_counter
 from typing import Optional
 
+from backend.budget_tracker import BudgetTracker
 from backend.pipeline.stage_0_estimate import Stage0Estimate
 from backend.pipeline.stage_1_intake import Stage1Intake
 from backend.pipeline.stage_3_ground import Stage3Ground
@@ -30,15 +31,21 @@ from backend.pipeline.types import (
 
 
 _MAX_VERIFY_RETRIES = 3
+_DEFAULT_BUDGET_CAP_USD = 1.0
+
+
+class BudgetExceeded(Exception):
+    """Levée par Pipeline quand le BudgetTracker dépasse le cap."""
 
 
 class Pipeline:
     """Orchestrateur de stages — un seul point d'entrée pour ``run(ctx)``."""
 
-    def __init__(self, llm_manager, ws_streamer, file_lock):
+    def __init__(self, llm_manager, ws_streamer, file_lock, budget_cap_usd: float = _DEFAULT_BUDGET_CAP_USD):
         self.llm = llm_manager
         self.ws = ws_streamer
         self.file_lock = file_lock
+        self.budget_cap_usd = budget_cap_usd
         self.stages_by_mode: dict[PipelineMode, list[type]] = {
             PipelineMode.SIMPLE: [
                 Stage0Estimate,
@@ -56,6 +63,7 @@ class Pipeline:
         stages_classes = self.stages_by_mode.get(ctx.mode, [])
 
         result = PipelineResult(success=True)
+        budget = BudgetTracker(cap_usd=self.budget_cap_usd)
 
         try:
             for stage_cls in stages_classes:
@@ -71,6 +79,13 @@ class Pipeline:
                         result.rollback_performed = True
                     self._finalize(result, ctx, start)
                     return result
+
+                # Plan 5B Task 7 : check budget cap après chaque stage.
+                budget.track_cost(stage_result.cost_usd or 0.0)
+                if budget.cap_exceeded():
+                    raise BudgetExceeded(
+                        f"budget cap exceeded: ${budget.current_usd():.4f} > ${budget.cap_usd:.2f}"
+                    )
 
             # Plan 5B Task 3 : retry loop Stage5 ← Stage7 si verify rouge.
             attempts_used = await self._retry_until_green_or_max(ctx, result)
@@ -92,15 +107,24 @@ class Pipeline:
             result.error = "cancelled by user"
             stash_ref = self._stash_ref_from_ctx(ctx)
             if stash_ref:
-                # Shielder le pop pour qu'il ne soit pas re-cancellé.
                 try:
                     await asyncio.shield(
                         git_stash_pop(ctx.workspace_root, stash_ref)
                     )
                     result.rollback_performed = True
                 except asyncio.CancelledError:
-                    # Si on est re-cancellé pendant le pop, on note quand même.
                     result.rollback_performed = True
+            self._finalize(result, ctx, start)
+            return result
+
+        except BudgetExceeded as e:
+            # Plan 5B Task 7 : cap budget dépassé → abort + rollback si stash.
+            result.success = False
+            result.error = str(e)
+            stash_ref = self._stash_ref_from_ctx(ctx)
+            if stash_ref:
+                await git_stash_pop(ctx.workspace_root, stash_ref)
+                result.rollback_performed = True
             self._finalize(result, ctx, start)
             return result
 

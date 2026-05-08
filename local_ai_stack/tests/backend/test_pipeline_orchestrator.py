@@ -183,6 +183,45 @@ async def test_pipeline_simple_mode_default_stages(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_pipeline_aborts_when_budget_cap_exceeded(tmp_path):
+    """Plan 5B Task 7 : si stage cost > cap, pipeline abort + error explicite."""
+    execute_output = SimpleNamespace(
+        files_modified=[],
+        stash_ref="stash@{0}",
+    )
+    stages = [
+        _ok_stage("estimate", cost=0.0001),
+        _ok_stage("intake", cost=0.0002),
+        _ok_stage("ground", cost=0.001, output=SimpleNamespace(summary="g")),
+        _ok_stage("execute", cost=10.0, output=execute_output),  # Boom
+        _ok_stage("verify", output=SimpleNamespace(all_green=True, attempts_used=1)),
+    ]
+
+    pipeline = Pipeline(
+        llm_manager=None,
+        ws_streamer=_FakeWS(),
+        file_lock=None,
+        budget_cap_usd=0.5,
+    )
+    pipeline.stages_by_mode[PipelineMode.SIMPLE] = stages
+
+    pop_mock = AsyncMock(return_value=True)
+    with patch("backend.pipeline.orchestrator.git_stash_pop", pop_mock):
+        result = await pipeline.run(_make_ctx(tmp_path))
+
+    assert result.success is False
+    assert "budget" in (result.error or "").lower()
+    assert result.rollback_performed is True
+    pop_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_default_budget_cap_is_one_dollar(tmp_path):
+    pipeline = Pipeline(llm_manager=None, ws_streamer=_FakeWS(), file_lock=None)
+    assert pipeline.budget_cap_usd == 1.0
+
+
+@pytest.mark.asyncio
 async def test_pipeline_injects_file_lock_when_supported(tmp_path):
     """Pipeline doit injecter file_lock dans les stages qui ont l'attribut."""
     received: dict = {}
