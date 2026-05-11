@@ -526,18 +526,23 @@ Chaque étape utilise le LLM le mieux adapté à son rôle (Gemini Flash pour
 classification, Pro pour analyse/review, R1 pour architecture, MiniMax M2.5
 pour coding) via dispatch multi-LLM.
 
-### État actuel — fin Plan 5A (2026-05)
+### État actuel — fin Plan 5B (2026-05)
 
-Mode **simple** fonctionnel de bout en bout (5/11 étapes implémentées) :
+Mode **simple** fonctionnel et robuste (5/11 étapes implémentées) :
 
 - `Stage0Estimate` (Gemini Flash) — classification + cost preview.
 - `Stage1Intake` (Gemini Flash) — validation non-ambiguïté.
 - `Stage3Ground` (MiniMax M2.5) — tool-calling read-only ancrage factuel.
 - `Stage5Execute` (MiniMax M2.5) — tool-calling write + git stash rollback.
-- `Stage7Verify` (mécanique, pas de LLM) — `ruff check` + `cargo check`.
+- `Stage7Verify` (mécanique) — ruff + eslint + cargo + pytest + vitest **en parallèle**, **retry max 3** avec feedback erreurs.
 
-Pipeline orchestrator dispatche les stages selon `PipelineMode`. UI : modal
-ESTIMATE de validation coût + TraceViewer temps réel.
+**Plan 5B livré** : retry loop Stage5 ↔ Stage7, streaming token-par-token,
+bouton Stop (Cmd+.) avec rollback automatique, budget cap configurable par
+pipeline ($1.00 par défaut) avec jauge UI tricolore.
+
+305 tests pytest + 134 tests vitest verts. Pipeline orchestrator dispatche
+les stages selon `PipelineMode`. UI : modal ESTIMATE + TraceViewer temps
+réel + StreamingBubble + BudgetIndicator.
 
 ### Plans à venir
 
