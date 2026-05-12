@@ -42,3 +42,14 @@ export interface PipelineResultPayload {
   rollbackPerformed: boolean;
   error: string | null;
 }
+
+// Plan 5C Task 2 : ChallengeResult aligné sur backend dataclass.
+export type ChallengeSeverity = "minor" | "moderate" | "critical";
+
+export interface ChallengeResultPayload {
+  risks: string[];
+  edgeCases: string[];
+  alternatives: string[];
+  severity: ChallengeSeverity;
+  blocking: boolean;
+}

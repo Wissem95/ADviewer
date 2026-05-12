@@ -9,6 +9,7 @@
 import { create } from "zustand";
 import { ws } from "../ws";
 import type {
+  ChallengeResultPayload,
   EstimateResult,
   PipelineMode,
   PipelineResultPayload,
@@ -27,6 +28,9 @@ interface PipelineStore {
   streamingBuffer: string;
   streamingStage: string | null;
   streamingLLM: string | null;
+  // Plan 5C Task 2 : challenge state (Stage2Challenge result + banner blocking).
+  challenge: ChallengeResultPayload | null;
+  challengeBlocking: boolean;
 
   onEstimateReceived: (estimate: EstimateResult) => void;
   confirm: (mode?: PipelineMode) => void;
@@ -47,6 +51,10 @@ interface PipelineStore {
   clearStreamingBuffer: () => void;
   // Plan 5B Task 6 : Stop pendant exécution (cancellation côté backend).
   stop: (reason?: string) => void;
+  // Plan 5C Task 2 : handlers challenge.
+  onChallengeResult: (data: ChallengeResultPayload) => void;
+  onChallengeBlocking: (data: { severity: string; risks: string[] }) => void;
+  acknowledgeBlocking: () => void;
   reset: () => void;
 }
 
@@ -60,6 +68,8 @@ const initialState = {
   streamingBuffer: "",
   streamingStage: null as string | null,
   streamingLLM: null as string | null,
+  challenge: null as ChallengeResultPayload | null,
+  challengeBlocking: false,
 };
 
 export const usePipelineStore = create<PipelineStore>((set, get) => ({
@@ -159,6 +169,18 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     ws.send("pipeline_stop", { reason });
   },
 
+  onChallengeResult: (data) => {
+    set({ challenge: data });
+  },
+
+  onChallengeBlocking: () => {
+    set({ challengeBlocking: true });
+  },
+
+  acknowledgeBlocking: () => {
+    set({ challengeBlocking: false });
+  },
+
   onPipelineComplete: (result) => {
     set({ finalResult: result, currentStageName: null });
   },
@@ -210,6 +232,11 @@ export function connectPipelineStore(): () => void {
     ws.on("chat_token", (data) => {
       store.onChatToken(
         data as { token: string; stage: string; llm: string | null },
+      );
+    }),
+    ws.on("challenge_blocking", (data) => {
+      store.onChallengeBlocking(
+        data as { severity: string; risks: string[] },
       );
     }),
   ];

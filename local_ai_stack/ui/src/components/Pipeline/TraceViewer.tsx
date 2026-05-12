@@ -9,6 +9,7 @@ import { usePipelineStore } from "../../stores/pipelineStore";
 import { StageRow } from "./StageRow";
 import { StreamingBubble } from "./StreamingBubble";
 import { BudgetIndicator } from "./BudgetIndicator";
+import { ChallengePanel } from "./ChallengePanel";
 
 const DEFAULT_BUDGET_CAP_USD = 1.0;
 
@@ -65,6 +66,10 @@ export function TraceViewer(): JSX.Element | null {
 
       <div className="mb-2">
         <BudgetIndicator current={totalCostUSD} cap={DEFAULT_BUDGET_CAP_USD} />
+      </div>
+
+      <div className="mb-2">
+        <ChallengePanel />
       </div>
 
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
