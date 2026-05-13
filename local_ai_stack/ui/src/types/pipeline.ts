@@ -73,3 +73,9 @@ export interface PlanResultPayload {
   estimatedRisk: PlanRisk;
   complexityConfirm: number;
 }
+
+// Plan 5C Task 7 : deadlock consensus payload (event WS pipeline_user_decision_needed).
+export interface DeadlockPayload {
+  plans: PlanResultPayload[];
+  concerns: string[][];
+}

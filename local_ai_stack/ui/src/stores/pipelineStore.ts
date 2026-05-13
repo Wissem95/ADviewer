@@ -10,6 +10,7 @@ import { create } from "zustand";
 import { ws } from "../ws";
 import type {
   ChallengeResultPayload,
+  DeadlockPayload,
   EstimateResult,
   PipelineMode,
   PipelineResultPayload,
@@ -34,6 +35,8 @@ interface PipelineStore {
   challengeBlocking: boolean;
   // Plan 5C Task 4 : plan state (Stage4aPlan result).
   plan: PlanResultPayload | null;
+  // Plan 5C Task 7 : deadlock consensus (2 plans à choisir).
+  deadlock: DeadlockPayload | null;
 
   onEstimateReceived: (estimate: EstimateResult) => void;
   confirm: (mode?: PipelineMode) => void;
@@ -60,6 +63,9 @@ interface PipelineStore {
   acknowledgeBlocking: () => void;
   // Plan 5C Task 4 : handler plan.
   onPlanResult: (data: PlanResultPayload) => void;
+  // Plan 5C Task 7 : handlers deadlock.
+  onDeadlock: (data: DeadlockPayload) => void;
+  resolveDeadlock: (choice: "plan1" | "plan2" | "cancel") => void;
   reset: () => void;
 }
 
@@ -76,6 +82,7 @@ const initialState = {
   challenge: null as ChallengeResultPayload | null,
   challengeBlocking: false,
   plan: null as PlanResultPayload | null,
+  deadlock: null as DeadlockPayload | null,
 };
 
 export const usePipelineStore = create<PipelineStore>((set, get) => ({
@@ -191,6 +198,23 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     set({ plan: data });
   },
 
+  onDeadlock: (data) => {
+    set({ deadlock: data });
+  },
+
+  resolveDeadlock: (choice) => {
+    const state = get();
+    ws.send("user_decision", {
+      type: "plan_deadlock",
+      choice,
+      plans_count: state.deadlock?.plans.length ?? 0,
+    });
+    set({ deadlock: null });
+    if (choice === "cancel") {
+      ws.send("pipeline_stop", { reason: "deadlock-cancelled" });
+    }
+  },
+
   onPipelineComplete: (result) => {
     set({ finalResult: result, currentStageName: null });
   },
@@ -248,6 +272,15 @@ export function connectPipelineStore(): () => void {
       store.onChallengeBlocking(
         data as { severity: string; risks: string[] },
       );
+    }),
+    ws.on("pipeline_user_decision_needed", (data) => {
+      const msg = data as { type?: string; plans?: unknown[]; concerns?: unknown[] };
+      if (msg.type === "plan_deadlock") {
+        store.onDeadlock({
+          plans: (msg.plans ?? []) as PlanResultPayload[],
+          concerns: (msg.concerns ?? []) as string[][],
+        });
+      }
     }),
   ];
   return () => cleanups.forEach((fn) => fn());
