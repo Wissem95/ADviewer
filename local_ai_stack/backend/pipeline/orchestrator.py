@@ -20,9 +20,15 @@ from typing import Optional
 from backend.budget_tracker import BudgetTracker
 from backend.pipeline.stage_0_estimate import Stage0Estimate
 from backend.pipeline.stage_1_intake import Stage1Intake
+from backend.pipeline.stage_2_challenge import Stage2Challenge
 from backend.pipeline.stage_3_ground import Stage3Ground
+from backend.pipeline.stage_4_consensus import Stage4Consensus
+from backend.pipeline.stage_4a_plan import Stage4aPlan
 from backend.pipeline.stage_5_execute import Stage5Execute, git_stash_pop
+from backend.pipeline.stage_6_self_check import Stage6SelfCheck
 from backend.pipeline.stage_7_verify import Stage7Verify
+from backend.pipeline.stage_8_review import Stage8Review
+from backend.pipeline.stage_9_second_review import Stage9SecondReview
 from backend.pipeline.types import (
     PipelineContext,
     PipelineMode,
@@ -46,6 +52,11 @@ class Pipeline:
         self.ws = ws_streamer
         self.file_lock = file_lock
         self.budget_cap_usd = budget_cap_usd
+        # Plan 5C Task 8 : MEDIUM et COMPLEX activés.
+        # MEDIUM : ajoute Stage4aPlan (R1 seul, pas de consensus), Stage6 SELF-CHECK,
+        #          Stage8 REVIEW (stubs Plan 5C, implémentés Plan 5D).
+        # COMPLEX : ajoute Stage2 CHALLENGE, Stage4Consensus (R1+Pro 2 rounds),
+        #           Stage6/8/9 stubs.
         self.stages_by_mode: dict[PipelineMode, list[type]] = {
             PipelineMode.SIMPLE: [
                 Stage0Estimate,
@@ -54,8 +65,28 @@ class Pipeline:
                 Stage5Execute,
                 Stage7Verify,
             ],
-            PipelineMode.MEDIUM: [],
-            PipelineMode.COMPLEX: [],
+            PipelineMode.MEDIUM: [
+                Stage0Estimate,
+                Stage1Intake,
+                Stage3Ground,
+                Stage4aPlan,
+                Stage5Execute,
+                Stage6SelfCheck,
+                Stage7Verify,
+                Stage8Review,
+            ],
+            PipelineMode.COMPLEX: [
+                Stage0Estimate,
+                Stage1Intake,
+                Stage2Challenge,
+                Stage3Ground,
+                Stage4Consensus,
+                Stage5Execute,
+                Stage6SelfCheck,
+                Stage7Verify,
+                Stage8Review,
+                Stage9SecondReview,
+            ],
         }
 
     async def run(self, ctx: PipelineContext) -> PipelineResult:
