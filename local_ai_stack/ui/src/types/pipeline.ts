@@ -79,3 +79,15 @@ export interface DeadlockPayload {
   plans: PlanResultPayload[];
   concerns: string[][];
 }
+
+// Plan 5C Task 9 : logs inter-LLM rounds consensus (event WS consensus_round).
+export interface ConsensusRound {
+  round: number;
+  verdict: "approve" | "revise" | "reject";
+  planSummary: {
+    changes_count: number;
+    tests_count: number;
+    estimated_risk: PlanRisk;
+  };
+  concerns: string[];
+}

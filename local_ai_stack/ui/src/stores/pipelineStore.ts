@@ -10,6 +10,7 @@ import { create } from "zustand";
 import { ws } from "../ws";
 import type {
   ChallengeResultPayload,
+  ConsensusRound,
   DeadlockPayload,
   EstimateResult,
   PipelineMode,
@@ -37,6 +38,8 @@ interface PipelineStore {
   plan: PlanResultPayload | null;
   // Plan 5C Task 7 : deadlock consensus (2 plans à choisir).
   deadlock: DeadlockPayload | null;
+  // Plan 5C Task 9 : log des rounds consensus (R1 ↔ Pro).
+  consensusRounds: ConsensusRound[];
 
   onEstimateReceived: (estimate: EstimateResult) => void;
   confirm: (mode?: PipelineMode) => void;
@@ -66,6 +69,8 @@ interface PipelineStore {
   // Plan 5C Task 7 : handlers deadlock.
   onDeadlock: (data: DeadlockPayload) => void;
   resolveDeadlock: (choice: "plan1" | "plan2" | "cancel") => void;
+  // Plan 5C Task 9 : handler consensus rounds.
+  onConsensusRound: (data: ConsensusRound) => void;
   reset: () => void;
 }
 
@@ -83,6 +88,7 @@ const initialState = {
   challengeBlocking: false,
   plan: null as PlanResultPayload | null,
   deadlock: null as DeadlockPayload | null,
+  consensusRounds: [] as ConsensusRound[],
 };
 
 export const usePipelineStore = create<PipelineStore>((set, get) => ({
@@ -215,6 +221,12 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     }
   },
 
+  onConsensusRound: (data) => {
+    set((state) => ({
+      consensusRounds: [...state.consensusRounds, data],
+    }));
+  },
+
   onPipelineComplete: (result) => {
     set({ finalResult: result, currentStageName: null });
   },
@@ -281,6 +293,20 @@ export function connectPipelineStore(): () => void {
           concerns: (msg.concerns ?? []) as string[][],
         });
       }
+    }),
+    ws.on("consensus_round", (data) => {
+      const msg = data as {
+        round: number;
+        verdict: ConsensusRound["verdict"];
+        plan_summary: ConsensusRound["planSummary"];
+        concerns: string[];
+      };
+      store.onConsensusRound({
+        round: msg.round,
+        verdict: msg.verdict,
+        planSummary: msg.plan_summary,
+        concerns: msg.concerns ?? [],
+      });
     }),
   ];
   return () => cleanups.forEach((fn) => fn());
