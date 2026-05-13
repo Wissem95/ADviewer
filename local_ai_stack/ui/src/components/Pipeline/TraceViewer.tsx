@@ -10,6 +10,7 @@ import { StageRow } from "./StageRow";
 import { StreamingBubble } from "./StreamingBubble";
 import { BudgetIndicator } from "./BudgetIndicator";
 import { ChallengePanel } from "./ChallengePanel";
+import { PlanDiffView } from "./PlanDiffView";
 
 const DEFAULT_BUDGET_CAP_USD = 1.0;
 
@@ -70,6 +71,10 @@ export function TraceViewer(): JSX.Element | null {
 
       <div className="mb-2">
         <ChallengePanel />
+      </div>
+
+      <div className="mb-2">
+        <PlanDiffView />
       </div>
 
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">

@@ -13,6 +13,7 @@ import type {
   EstimateResult,
   PipelineMode,
   PipelineResultPayload,
+  PlanResultPayload,
   StageProgress,
   StageStatus,
 } from "../types/pipeline";
@@ -31,6 +32,8 @@ interface PipelineStore {
   // Plan 5C Task 2 : challenge state (Stage2Challenge result + banner blocking).
   challenge: ChallengeResultPayload | null;
   challengeBlocking: boolean;
+  // Plan 5C Task 4 : plan state (Stage4aPlan result).
+  plan: PlanResultPayload | null;
 
   onEstimateReceived: (estimate: EstimateResult) => void;
   confirm: (mode?: PipelineMode) => void;
@@ -55,6 +58,8 @@ interface PipelineStore {
   onChallengeResult: (data: ChallengeResultPayload) => void;
   onChallengeBlocking: (data: { severity: string; risks: string[] }) => void;
   acknowledgeBlocking: () => void;
+  // Plan 5C Task 4 : handler plan.
+  onPlanResult: (data: PlanResultPayload) => void;
   reset: () => void;
 }
 
@@ -70,6 +75,7 @@ const initialState = {
   streamingLLM: null as string | null,
   challenge: null as ChallengeResultPayload | null,
   challengeBlocking: false,
+  plan: null as PlanResultPayload | null,
 };
 
 export const usePipelineStore = create<PipelineStore>((set, get) => ({
@@ -179,6 +185,10 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
 
   acknowledgeBlocking: () => {
     set({ challengeBlocking: false });
+  },
+
+  onPlanResult: (data) => {
+    set({ plan: data });
   },
 
   onPipelineComplete: (result) => {

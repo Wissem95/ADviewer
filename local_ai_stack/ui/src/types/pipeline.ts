@@ -53,3 +53,23 @@ export interface ChallengeResultPayload {
   severity: ChallengeSeverity;
   blocking: boolean;
 }
+
+// Plan 5C Task 4 : PlanResult aligné sur backend.
+export type PlanOperation = "edit" | "create" | "patch" | "delete";
+export type PlanRisk = "low" | "medium" | "high";
+
+export interface PlanChangePayload {
+  file: string;
+  operation: PlanOperation;
+  description: string;
+  intendedDiffSummary: string;
+}
+
+export interface PlanResultPayload {
+  changes: PlanChangePayload[];
+  testsToRun: string[];
+  rollbackStrategy: string;
+  rationale: string;
+  estimatedRisk: PlanRisk;
+  complexityConfirm: number;
+}
