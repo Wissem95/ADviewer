@@ -526,23 +526,26 @@ Chaque étape utilise le LLM le mieux adapté à son rôle (Gemini Flash pour
 classification, Pro pour analyse/review, R1 pour architecture, MiniMax M2.5
 pour coding) via dispatch multi-LLM.
 
-### État actuel — fin Plan 5B (2026-05)
+### État actuel — fin Plan 5C (2026-05)
 
-Mode **simple** fonctionnel et robuste (5/11 étapes implémentées) :
+**Modes SIMPLE / MEDIUM / COMPLEX tous activés** (8/11 étapes
+implémentées en vrai, 3 stubs Plan 5D) :
 
 - `Stage0Estimate` (Gemini Flash) — classification + cost preview.
 - `Stage1Intake` (Gemini Flash) — validation non-ambiguïté.
+- `Stage2Challenge` (Gemini Pro) — avocat du diable, risks/edge_cases/alternatives.
 - `Stage3Ground` (MiniMax M2.5) — tool-calling read-only ancrage factuel.
+- `Stage4Consensus` (R1 + Pro) — consensus 2 rounds max sur le PLAN.
 - `Stage5Execute` (MiniMax M2.5) — tool-calling write + git stash rollback.
-- `Stage7Verify` (mécanique) — ruff + eslint + cargo + pytest + vitest **en parallèle**, **retry max 3** avec feedback erreurs.
+- `Stage7Verify` (mécanique) — ruff + eslint + cargo + pytest + vitest en parallèle, retry max 3.
 
-**Plan 5B livré** : retry loop Stage5 ↔ Stage7, streaming token-par-token,
-bouton Stop (Cmd+.) avec rollback automatique, budget cap configurable par
-pipeline ($1.00 par défaut) avec jauge UI tricolore.
+**Plan 5C livré** : Stage2Challenge, Stage4aPlan (R1), Stage4bPlanReview (Pro),
+mécanisme consensus 2/2 avec deadlock UI (DeadlockModal), modes MEDIUM et
+COMPLEX activés dans le Pipeline orchestrator, ConsensusRoundsLog côté UI.
 
-305 tests pytest + 134 tests vitest verts. Pipeline orchestrator dispatche
-les stages selon `PipelineMode`. UI : modal ESTIMATE + TraceViewer temps
-réel + StreamingBubble + BudgetIndicator.
+342 tests pytest + 158 tests vitest verts. UI : modal ESTIMATE +
+TraceViewer + StreamingBubble + BudgetIndicator + ChallengePanel +
+PlanDiffView + ConsensusRoundsLog + DeadlockModal.
 
 ### Plans à venir
 
