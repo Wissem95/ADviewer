@@ -47,7 +47,7 @@ export function LLMStatus() {
             ) : null}
           </div>
           <div className="mt-1 text-[10px] text-muted">
-            {llm.tokensToday.toLocaleString()} tokens · {llm.latencyMs}ms
+            {llm.tokensToday.toLocaleString("en-US")} tokens · {llm.latencyMs}ms
           </div>
         </div>
       ))}

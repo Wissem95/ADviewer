@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ from backend.task_queue import LLMTaskQueue
 from backend.ws_streamer import WSStreamer
 from backend.memory import LongTermMemory
 from backend.orchestrator import Orchestrator, OrchestratorRequest
+from backend.pipeline.chat_runner import make_pipeline, run_chat_pipeline, select_mode
+from backend.pipeline.types import PipelineContext
 
 
 # ── Configuration des 5 LLMs ────────────────────────────────────────────────
@@ -117,6 +120,9 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
     app.state.task_queue = LLMTaskQueue()
     app.state.ws_streamer = WSStreamer()
     app.state.llm_configs = list(DEFAULT_LLMS)
+    # Plan 5D Task 11.3 : tasks pipeline en cours, indexées par session_id.
+    # Lues par le handler ``pipeline_stop`` (bouton Stop UI) pour cancel.
+    app.state.pipeline_tasks = {}
 
     # ── Routes REST ──────────────────────────────────────────────────────────
 
@@ -403,7 +409,33 @@ def create_app(db_path: str = "localcoder.db") -> FastAPI:
                 except (json.JSONDecodeError, TypeError):
                     continue
 
-                if msg_type == "chat":
+                if msg_type == "chat" and data.get("usePipeline"):
+                    # Plan 5D Task 11.3 : chemin Pipeline multi-LLM/consensus.
+                    # Gated par data.usePipeline → n'affecte pas le chat legacy.
+                    workspace = data.get("workspace_root")
+                    if not workspace:
+                        await streamer.send_to(session_id, WSEvent(
+                            type="error",
+                            data={"message": "workspace_root requis pour le mode pipeline"},
+                            session_id=session_id,
+                        ))
+                        continue
+                    ctx = PipelineContext(
+                        prompt=data.get("prompt", ""),
+                        workspace_root=Path(workspace),
+                        session_id=session_id,
+                        mode=select_mode(data.get("mode")),
+                        mention=data.get("mention"),
+                    )
+                    pipeline = make_pipeline(app.state)
+                    task = asyncio.create_task(
+                        run_chat_pipeline(pipeline=pipeline, ws_streamer=streamer, ctx=ctx)
+                    )
+                    app.state.pipeline_tasks[session_id] = task
+                    task.add_done_callback(
+                        lambda _t, sid=session_id: app.state.pipeline_tasks.pop(sid, None)
+                    )
+                elif msg_type == "chat":
                     orch: Orchestrator = app.state.orchestrator
                     req = OrchestratorRequest(
                         user_id=session_id,

@@ -74,7 +74,7 @@ export default function MonitoringTab() {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted">Tokens aujourd'hui</span>
-            <span className="text-text">{tokensToday.toLocaleString()}</span>
+            <span className="text-text">{tokensToday.toLocaleString("en-US")}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted">Coût estimé</span>

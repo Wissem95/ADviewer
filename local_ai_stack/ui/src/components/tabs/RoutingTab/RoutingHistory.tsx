@@ -49,7 +49,7 @@ export function RoutingHistory() {
                   <td className="px-3 py-2 text-muted">
                     {(entry.durationMs / 1000).toFixed(1)}s
                   </td>
-                  <td className="px-3 py-2 text-muted">{entry.tokens.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-muted">{entry.tokens.toLocaleString("en-US")}</td>
                 </tr>
               ))}
             </tbody>

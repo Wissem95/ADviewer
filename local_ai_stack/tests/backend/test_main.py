@@ -199,6 +199,67 @@ def test_websocket_chat_handler(tmp_path):
                 assert "minimax" in chat_response["data"]["llm"]
 
 
+def test_websocket_chat_pipeline_path(tmp_path):
+    """WS chat avec usePipeline=true → exécute le Pipeline et émet pipeline_done.
+
+    Le Pipeline réel est patché (couvert E2E par test_chat_runner) ; ici on
+    valide le câblage handler : task créée, run_chat_pipeline appelé, event
+    final relayé au bon client.
+    """
+    from fastapi.testclient import TestClient
+    from backend.pipeline.types import PipelineResult
+
+    app = create_app(db_path=str(tmp_path / "ws_pipe.db"))
+
+    class _FakePipeline:
+        async def run(self, ctx):
+            return PipelineResult(
+                success=True,
+                files_modified=["hello.py"],
+                total_cost_usd=0.002,
+            )
+
+    with TestClient(app) as client:
+        with patch("backend.main.make_pipeline", return_value=_FakePipeline()):
+            with client.websocket_connect("/ws") as ws:
+                ws.send_json({"type": "chat", "data": {
+                    "prompt": "Crée hello.py",
+                    "usePipeline": True,
+                    "mode": "simple",
+                    "workspace_root": str(tmp_path),
+                }})
+                done = None
+                for _ in range(20):
+                    msg = ws.receive_json()
+                    if msg.get("type") == "pipeline_done":
+                        done = msg
+                        break
+                assert done is not None
+                assert done["data"]["success"] is True
+                assert done["data"]["mode"] == "simple"
+                assert "hello.py" in done["data"]["filesModified"]
+
+
+def test_websocket_chat_pipeline_requires_workspace(tmp_path):
+    """usePipeline=true sans workspace_root → event error, pas de crash."""
+    from fastapi.testclient import TestClient
+
+    app = create_app(db_path=str(tmp_path / "ws_pipe2.db"))
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "chat", "data": {
+                "prompt": "x", "usePipeline": True, "mode": "simple",
+            }})
+            err = None
+            for _ in range(10):
+                msg = ws.receive_json()
+                if msg.get("type") == "error":
+                    err = msg
+                    break
+            assert err is not None
+            assert "workspace_root" in err["data"]["message"]
+
+
 @pytest.mark.asyncio
 async def test_project_start_endpoint_wires_orchestrator(app):
     """POST /project/start appelle orch.run_project_mode et renvoie la roadmap."""

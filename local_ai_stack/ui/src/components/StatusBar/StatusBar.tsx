@@ -48,7 +48,7 @@ export function StatusBar() {
       <span className="opacity-40">|</span>
 
       <span>
-        {tokensToday.toLocaleString()} tokens · ${estimatedCostUSD.toFixed(3)}
+        {tokensToday.toLocaleString("en-US")} tokens · ${estimatedCostUSD.toFixed(3)}
       </span>
 
       <div className="ml-auto flex items-center gap-1" aria-label="Backend status">

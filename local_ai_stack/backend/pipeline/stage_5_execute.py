@@ -62,6 +62,29 @@ async def git_stash_save(workspace_root: Path, label: str) -> str:
     return ""
 
 
+async def git_discard_to_head(workspace_root: Path) -> None:
+    """Revient à HEAD en annulant TOUS les changements du working dir.
+
+    ``reset --hard`` défait les modifs tracked, ``clean -fd`` retire les fichiers
+    untracked créés par execute. Utilisé au rollback quand on abandonne les
+    modifs d'execute après échec verify : sur un repo propre avant execute,
+    ``git stash`` n'a rien sauvegardé (stash_ref vide), donc pop seul ne suffit
+    pas — il faut explicitement supprimer ce qu'execute a produit. Les modifs
+    pré-existantes ont été stashées (-u) avant execute, clean ne les touche pas.
+    """
+    for args in (
+        ["git", "reset", "--hard", "--quiet", "HEAD"],
+        ["git", "clean", "-fdq"],
+    ):
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=str(workspace_root),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+
+
 async def git_stash_pop(workspace_root: Path, stash_ref: str) -> bool:
     """Pop le stash référencé. Retourne True si succès, False sinon.
 

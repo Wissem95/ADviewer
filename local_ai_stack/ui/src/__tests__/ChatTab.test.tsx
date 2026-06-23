@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { FakeWebSocket } from "../test/setup";
 import { setupWs } from "../test/wsSetup";
@@ -10,6 +10,8 @@ async function setup() {
 }
 
 describe("ChatTab", () => {
+  beforeEach(() => localStorage.clear());
+
   it("affiche un empty state au démarrage", async () => {
     const { ChatTab } = await setup();
     render(<ChatTab />);
@@ -89,6 +91,64 @@ describe("ChatTab", () => {
         llmName: "MiniMax",
       }),
     );
+    expect(screen.queryByTestId("loading")).toBeNull();
+  });
+
+  it("toggle pipeline ON → envoie usePipeline + mode + workspace_root", async () => {
+    const { ChatTab } = await setup();
+    render(<ChatTab />);
+    const sock = FakeWebSocket.instances[0];
+
+    // Activer le toggle + renseigner mode et workspace
+    fireEvent.click(screen.getByLabelText("Activer le mode pipeline"));
+    fireEvent.change(screen.getByLabelText("Mode pipeline"), { target: { value: "complex" } });
+    fireEvent.change(screen.getByLabelText("Dossier du projet"), { target: { value: "/tmp/projet" } });
+
+    fireEvent.change(screen.getByLabelText("Chat prompt"), { target: { value: "refacto" } });
+    fireEvent.click(screen.getByLabelText("Send"));
+
+    const chat = sock.sent.map((s) => JSON.parse(s)).find((m) => m.type === "chat");
+    expect(chat?.data).toEqual({
+      prompt: "refacto",
+      mention: null,
+      usePipeline: true,
+      mode: "complex",
+      workspace_root: "/tmp/projet",
+    });
+  });
+
+  it("toggle pipeline ON sans workspace → bloque l'envoi + avertit", async () => {
+    const { ChatTab } = await setup();
+    render(<ChatTab />);
+    const sock = FakeWebSocket.instances[0];
+    fireEvent.click(screen.getByLabelText("Activer le mode pipeline"));
+    fireEvent.change(screen.getByLabelText("Chat prompt"), { target: { value: "x" } });
+    fireEvent.click(screen.getByLabelText("Send"));
+
+    expect(sock.sent.map((s) => JSON.parse(s)).find((m) => m.type === "chat")).toBeUndefined();
+    expect(screen.getByText(/Renseigne le dossier du projet/)).toBeInTheDocument();
+  });
+
+  it("pipeline_done → message récap + loader retiré", async () => {
+    const { ChatTab } = await setup();
+    render(<ChatTab />);
+    fireEvent.click(screen.getByLabelText("Activer le mode pipeline"));
+    fireEvent.change(screen.getByLabelText("Dossier du projet"), { target: { value: "/tmp/p" } });
+    fireEvent.change(screen.getByLabelText("Chat prompt"), { target: { value: "go" } });
+    fireEvent.click(screen.getByLabelText("Send"));
+    expect(screen.getByTestId("loading")).toBeInTheDocument();
+
+    const sock = FakeWebSocket.instances[0];
+    act(() =>
+      sock._triggerMessage("pipeline_done", {
+        success: true,
+        mode: "simple",
+        filesModified: ["hello.py"],
+        error: null,
+      }),
+    );
+    expect(screen.getByText(/Pipeline simple terminé/)).toBeInTheDocument();
+    expect(screen.getByText(/hello\.py/)).toBeInTheDocument();
     expect(screen.queryByTestId("loading")).toBeNull();
   });
 

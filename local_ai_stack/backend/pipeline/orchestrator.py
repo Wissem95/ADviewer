@@ -24,7 +24,11 @@ from backend.pipeline.stage_2_challenge import Stage2Challenge
 from backend.pipeline.stage_3_ground import Stage3Ground
 from backend.pipeline.stage_4_consensus import Stage4Consensus
 from backend.pipeline.stage_4a_plan import Stage4aPlan
-from backend.pipeline.stage_5_execute import Stage5Execute, git_stash_pop
+from backend.pipeline.stage_5_execute import (
+    Stage5Execute,
+    git_discard_to_head,
+    git_stash_pop,
+)
 from backend.pipeline.stage_6_self_check import Stage6SelfCheck
 from backend.pipeline.stage_7_verify import Stage7Verify
 from backend.pipeline.stage_8_review import Stage8Review
@@ -122,10 +126,14 @@ class Pipeline:
             attempts_used = await self._retry_until_green_or_max(ctx, result)
             verify_output = ctx.get_stage_output("verify")
             if verify_output is not None and getattr(verify_output, "all_green", True) is False:
+                # verify rouge après max retries → abandon. On annule réellement
+                # les modifs d'execute (discard to HEAD) puis on restaure le stash
+                # pré-existant s'il existe. Le rollback est toujours effectué ici.
                 stash_ref = self._stash_ref_from_ctx(ctx)
+                await git_discard_to_head(ctx.workspace_root)
                 if stash_ref:
                     await git_stash_pop(ctx.workspace_root, stash_ref)
-                    result.rollback_performed = True
+                result.rollback_performed = True
                 result.success = False
                 result.error = f"verify failed after {attempts_used} retries"
             else:
