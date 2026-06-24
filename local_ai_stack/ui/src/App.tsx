@@ -1,6 +1,7 @@
 import { lazy, Suspense, useRef, useState } from "react";
 import { ActivityBar } from "./components/ActivityBar/ActivityBar";
 import { StatusBar } from "./components/StatusBar/StatusBar";
+import { Logo } from "./components/Logo";
 
 const ChatTab = lazy(() => import("./components/tabs/ChatTab/ChatTab"));
 const TerminalsTab = lazy(() => import("./components/tabs/TerminalsTab/TerminalsTab"));
@@ -38,12 +39,23 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg text-text">
+      {/* Barre de titre */}
+      <header className="flex items-center gap-3 px-5 h-14 shrink-0 border-b border-border bg-panel">
+        <Logo size={30} glow />
+        <span className="font-display text-lg font-bold tracking-tight text-gradient">LocalCoder</span>
+        <span className="text-muted text-[13px]">multi-LLM coding agent</span>
+        <span className="ml-auto flex items-center gap-2 text-[13px] text-muted">
+          <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+          5 modèles actifs
+        </span>
+      </header>
+
       <div className="flex flex-1 overflow-hidden">
         <ActivityBar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <div
-            className="flex border-b border-border bg-panel shrink-0"
+            className="flex gap-1 px-3 border-b border-border bg-panel shrink-0"
             role="tablist"
             aria-label="Vues principales"
           >
@@ -63,11 +75,11 @@ export default function App() {
                   onClick={() => setActiveTab(tab)}
                   onKeyDown={(e) => onTabKeyDown(e, tab)}
                   className={[
-                    "px-4 py-2 text-sm font-medium transition-colors outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-accent",
+                    "px-3.5 py-2.5 text-sm transition-colors outline-none border-b-2 -mb-px",
+                    "focus-visible:ring-2 focus-visible:ring-accent/50 rounded-t",
                     selected
-                      ? "text-text border-b-2 border-accent bg-bg"
-                      : "text-muted hover:text-text",
+                      ? "text-text border-accent"
+                      : "text-muted border-transparent hover:text-text",
                   ].join(" ")}
                 >
                   {TAB_LABELS[tab]}

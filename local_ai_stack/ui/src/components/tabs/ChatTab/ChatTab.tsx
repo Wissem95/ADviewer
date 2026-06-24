@@ -2,6 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { ws } from "../../../ws";
 import { MessageBubble, type Message } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
+import { Logo } from "../../Logo";
+
+const HERO_MODELS = [
+  { name: "MiniMax M2", color: "#34d8e6" },
+  { name: "Gemini Pro", color: "#7b6cff" },
+  { name: "Gemini Flash", color: "#9aa3b8" },
+  { name: "DeepSeek R1", color: "#ff5fa2" },
+  { name: "Codestral", color: "#34d399" },
+];
 
 interface ChatResponse {
   content: string;
@@ -131,13 +140,27 @@ export default function ChatTab() {
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto p-4" data-testid="chat-messages">
         {messages.length === 0 && !isLoading && (
-          <div className="flex items-center justify-center h-full text-muted text-sm">
-            <div className="text-center">
-              <p className="text-2xl mb-2">🤖</p>
-              <p>Décris une tâche ou un projet.</p>
-              <p className="text-xs mt-1 opacity-60">
-                Le système choisit le bon LLM automatiquement.
-              </p>
+          <div className="flex items-center justify-center h-full px-6">
+            <div className="text-center max-w-lg fade-in">
+              <div className="hero-halo inline-flex mb-6">
+                <Logo size={72} glow />
+              </div>
+              <h2 className="font-display text-2xl font-bold mb-2 text-gradient">
+                Décris une tâche ou un projet.
+              </h2>
+              <p className="text-muted mb-7">Le système choisit le bon LLM automatiquement.</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {HERO_MODELS.map((m) => (
+                  <span
+                    key={m.name}
+                    className="inline-flex items-center gap-1.5 text-[12.5px] text-muted
+                               border border-border rounded-full px-2.5 py-1 bg-panel/60"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />
+                    {m.name}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -145,36 +168,38 @@ export default function ChatTab() {
           <MessageBubble key={msg.id} message={msg} />
         ))}
         {isLoading && (
-          <div className="flex items-center gap-2 text-muted text-sm mb-4" data-testid="loading">
-            <div className="flex gap-1">
-              <span className="animate-bounce" style={{ animationDelay: "0ms" }}>●</span>
-              <span className="animate-bounce" style={{ animationDelay: "150ms" }}>●</span>
-              <span className="animate-bounce" style={{ animationDelay: "300ms" }}>●</span>
-            </div>
-            <span>En cours de traitement...</span>
+          <div className="flex items-center gap-2.5 text-muted mb-4" data-testid="loading">
+            <span className="flex gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} />
+            </span>
+            <span>Réflexion en cours…</span>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* Plan 5D Task 11.3 : barre mode Pipeline (multi-LLM). */}
-      <div className="flex items-center gap-2 px-4 py-2 border-t border-border text-xs">
-        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+      <div className="flex items-center gap-3 px-4 py-2 border-t border-border text-[13px] bg-panel">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
             aria-label="Activer le mode pipeline"
             checked={usePipeline}
             onChange={(e) => setUsePipeline(e.target.checked)}
+            className="accent-[var(--accent)] w-4 h-4"
           />
-          <span>Pipeline (multi-LLM)</span>
+          <span className={usePipeline ? "text-text" : "text-muted"}>Pipeline (multi-LLM)</span>
         </label>
         {usePipeline && (
           <>
+            <span className="text-muted">mode</span>
             <select
               aria-label="Mode pipeline"
               value={mode}
               onChange={(e) => setMode(e.target.value as PipelineMode)}
-              className="bg-transparent border border-border rounded px-1 py-0.5"
+              className="bg-bg border border-border text-text rounded-md px-2 py-1 outline-none focus:border-accent"
             >
               <option value="simple">simple</option>
               <option value="medium">medium</option>
@@ -183,10 +208,11 @@ export default function ChatTab() {
             <input
               type="text"
               aria-label="Dossier du projet"
-              placeholder="/chemin/vers/projet"
+              placeholder="~/chemin/du/projet"
               value={workspace}
               onChange={(e) => onWorkspaceChange(e.target.value)}
-              className="flex-1 bg-transparent border border-border rounded px-2 py-0.5"
+              className="flex-1 bg-bg border border-border text-text rounded-md px-2.5 py-1 outline-none
+                         focus:border-accent placeholder:text-muted"
             />
           </>
         )}

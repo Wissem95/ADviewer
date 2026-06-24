@@ -2,29 +2,95 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ───────────────────────────────────────────────────────────────────────────
+   LocalCoder — interface sobre et soignée (esprit Codex / Claude Code, mais
+   sa propre identité). Base sombre neutre, accent cyan + touche magenta,
+   monospace, beaucoup d'air. Effets minimaux et discrets.
+   ─────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --bg: #1e1e2e;
-  --panel: #181825;
-  --border: #313244;
-  --text: #cdd6f4;
-  --muted: #6c7086;
-  --accent: #89b4fa;
+  --bg: #0d0f14;
+  --panel: #141720;
+  --panel-2: #1a1e29;
+  --border: #232838;
+  --border-bright: #333a4f;
+  --text: #eef1f7;
+  --muted: #9aa3b8;
+  --accent: #34d8e6;        /* cyan adouci */
+  --accent-dim: #1a7e8c;
+  --accent-2: #ff5fa2;      /* magenta, en touche */
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(820px 460px at 100% -5%, rgba(255, 95, 162, 0.10), transparent 60%),
+    radial-gradient(900px 520px at -5% 105%, rgba(45, 212, 230, 0.11), transparent 60%),
+    var(--bg);
   color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 13px;
+  font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+  font-size: 14px;
+  line-height: 1.65;
   overflow: hidden;
-  user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--panel); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+textarea, input, select, button { font-family: inherit; }
+
+::selection { background: rgba(45, 212, 230, 0.25); }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Curseur de saisie clignotant discret. */
+.cursor-blink::after {
+  content: "▏";
+  color: var(--accent);
+  animation: caret 1.1s steps(1) infinite;
+}
+@keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+/* Apparition douce. */
+.fade-in { animation: fade-in 0.4s ease-out both; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* ── Identité visuelle ─────────────────────────────────────────────────────── */
+
+.font-display { font-family: "Chakra Petch", "JetBrains Mono", sans-serif; }
+
+/* Texte en gradient cyan→violet→magenta (wordmark, titres). */
+.text-gradient {
+  background: linear-gradient(100deg, #34d8e6 0%, #7b6cff 48%, #ff5fa2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Bouton/élément accent avec halo discret. */
+.accent-glow { box-shadow: 0 6px 22px -8px rgba(123, 108, 255, 0.55), 0 0 0 1px rgba(123, 108, 255, 0.25); }
+.accent-glow-hover:hover { box-shadow: 0 8px 26px -6px rgba(123, 108, 255, 0.7), 0 0 0 1px rgba(123, 108, 255, 0.4); }
+
+/* Halo doux derrière le logo du hero. */
+.hero-halo { position: relative; }
+.hero-halo::before {
+  content: "";
+  position: absolute;
+  inset: -45%;
+  z-index: -1;
+  background: radial-gradient(circle, rgba(123, 108, 255, 0.28), transparent 65%);
+  filter: blur(18px);
+}
+
+/* Liseré gradient (bordure animée subtile) pour la zone de saisie au focus. */
+.focus-grad:focus-within {
+  border-color: transparent;
+  background-image: linear-gradient(var(--panel), var(--panel)),
+    linear-gradient(100deg, #34d8e6, #7b6cff, #ff5fa2);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
